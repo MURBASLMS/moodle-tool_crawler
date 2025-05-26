@@ -40,6 +40,11 @@ require_once(__DIR__ . '/../../constants.php');
 class tool_crawler_robot_crawler_test extends advanced_testcase {
 
     /**
+     * @var \tool_crawler\robot\crawler Crawler to use in tests.
+     */
+    private $robot;
+
+    /**
      * Setup robot crawler testcase and parent setup
      */
     protected function setUp():void {
