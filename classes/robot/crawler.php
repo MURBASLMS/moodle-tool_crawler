@@ -1234,7 +1234,7 @@ class crawler {
                     // This code path will erroneously be triggered in the case of trailers. Not a big problem, especially not in
                     // the case of well-formed trailers. But we will then reset $httpmsg a bit too early.
                     if (preg_match('@^HTTP/[^ ]+ ([0-9]+) ([^\r\n]*)@', $header, $headerparts)) { // HTTP status-line.
-                        $httpmsg = $headerparts[2];
+                        $httpmsg = clean_param($headerparts[2], PARAM_TEXT);
                     } else {
                         $httpmsg = '';
                     }
