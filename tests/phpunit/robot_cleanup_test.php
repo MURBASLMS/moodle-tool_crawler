@@ -22,6 +22,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+namespace tool_crawler;
+
 use tool_crawler\local\url;
 
 defined('MOODLE_INTERNAL') || die('Direct access to this script is forbidden');
@@ -37,7 +39,7 @@ defined('MOODLE_INTERNAL') || die('Direct access to this script is forbidden');
  * @copyright  2016 Suan Kan <suankan@catalyst-au.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class tool_crawler_robot_cleanup_test extends advanced_testcase {
+final class robot_cleanup_test extends \advanced_testcase {
 
     /**
      * @var \tool_crawler\robot\crawler Crawler to use in tests.
@@ -47,10 +49,11 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
     /**
      * Prepare the config options for plugin which are used for robot_cleanup task logic
      *
-     * @throws coding_exception
+     * @throws \coding_exception
      */
     protected function setUp(): void {
         global $DB;
+        parent::setUp();
 
         $this->resetAfterTest(true);
         $this->robot = new \tool_crawler\robot\crawler();
@@ -58,8 +61,8 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
         set_config('retentionperiod', 600, 'tool_crawler');
 
         // Add 3 test records to table {tool_crawler_url}: 2 old ones and 1 item not older than configured retention period.
-        $dataobjects = array(
-            array(
+        $dataobjects = [
+            [
                 'url' => 'http://cqu.ubox001.com/course/index.php',
                 'externalurl' => 0,
                 'timecreated' => strtotime("16-05-2016 10:00:00"),
@@ -78,9 +81,9 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
                 'ignoreduserid' => null,
                 'ignoredtime' => null,
                 'httpmsg' => 'OK',
-                'errormsg' => null
-            ),
-            array(
+                'errormsg' => null,
+            ],
+            [
                 'url' => 'http://moodle.org/',
                 'externalurl' => 1,
                 'timecreated' => strtotime("15-05-2016 10:00:00"),
@@ -99,9 +102,9 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
                 'ignoreduserid' => null,
                 'ignoredtime' => null,
                 'httpmsg' => 'Moved Permanently',
-                'errormsg' => null
-            ),
-            array(
+                'errormsg' => null,
+            ],
+            [
                 'url' => 'http://cqu.ubox001.com/course/index.php?categoryid=1',
                 'externalurl' => 0,
                 'timecreated' => strtotime("16-05-2016 10:00:00"),
@@ -120,16 +123,16 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
                 'ignoreduserid' => null,
                 'ignoredtime' => null,
                 'httpmsg' => 'OK',
-                'errormsg' => null
-            )
-        );
+                'errormsg' => null,
+            ],
+        ];
 
         try {
             foreach ($dataobjects as $dataobject) {
                 $persistent = new url(0, (object)$dataobject);
                 $persistent->create();
             }
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             echo 'Caught exception: ', $e->getMessage(), "\n";
         }
     }
@@ -139,7 +142,7 @@ class tool_crawler_robot_cleanup_test extends advanced_testcase {
      * Execute robot_cleanup scheduled task.
      * Check if only 1 record (out of 3 configured above) is left in table {tool_crawler_url}.
      */
-    public function test_robot_cleanup() {
+    public function test_robot_cleanup(): void {
         global $DB;
 
         // Expect the task to cleanup 2 records and leave 1.

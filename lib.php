@@ -77,7 +77,7 @@ function tool_crawler_crawl($verbose = false) {
         $history->cronticks = 0;
         $history->id = $DB->insert_record('tool_crawler_history', $history);
     } else {
-        $history = $DB->get_record('tool_crawler_history', array('startcrawl' => $crawlstart));
+        $history = $DB->get_record('tool_crawler_history', ['startcrawl' => $crawlstart]);
     }
 
     $cronstart = time();
@@ -112,9 +112,9 @@ function tool_crawler_summary($courseid) {
 
     global $DB;
 
-    $result = array();
-    $result['large']  = array();
-    $result['nearby'] = array();
+    $result = [];
+    $result['large']  = [];
+    $result['nearby'] = [];
 
     // Breakdown counts of status codes by 200, 300, 400, 500.
     $result['broken']   = $DB->get_records_sql("
@@ -126,9 +126,9 @@ function tool_crawler_summary($courseid) {
       LEFT JOIN {course}            c ON c.id = a.courseid
           WHERE a.courseid = :course
        GROUP BY substr(b.httpcode,0,2)
-    ", array('course' => $courseid) );
+    ", ['course' => $courseid] );
 
-    $e = (object) array('count' => 0);
+    $e = (object) ['count' => 0];
     if (!array_key_exists('0', $result['broken'])) {
         $result['broken']['0'] = $e;
     }
@@ -164,7 +164,7 @@ function tool_crawler_extend_navigation_course($navigation, $course, $coursecont
     if ($coursereports) {
         $coursereports->add(
             get_string('pluginname', 'tool_crawler'),
-            new moodle_url('/admin/tool/crawler/report.php', array('report' => 'queued', 'course' => $course->id)),
+            new moodle_url('/admin/tool/crawler/report.php', ['report' => 'queued', 'course' => $course->id]),
             navigation_node::TYPE_CONTAINER,
             null,
             'linkchecker',
