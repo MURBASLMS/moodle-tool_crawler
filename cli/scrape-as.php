@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
-
 /**
  *  tool_crawler cli
  *
@@ -30,14 +29,14 @@ require(dirname(dirname(dirname(dirname(dirname(__FILE__))))).'/config.php');
 require_once($CFG->libdir.'/clilib.php');
 require_once($CFG->dirroot .'/admin/tool/crawler/lib.php');
 
-list($options, $unrecognized) = cli_get_params(array(
+list($options, $unrecognized) = cli_get_params([
     'help'      => false,
     'url'   => null,
-),
-array(
+],
+[
     'h' => 'help',
     'u' => 'url',
-));
+]);
 
 if ($unrecognized) {
     $unrecognized = implode("\n  ", $unrecognized);

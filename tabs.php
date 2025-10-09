@@ -28,7 +28,7 @@ $adminrows = [
     new tabobject('settings', new moodle_url('/admin/settings.php?section=tool_crawler'),
         get_string('settings', 'tool_crawler')),
     new tabobject('index',    new moodle_url('/admin/tool/crawler/index.php'),
-        get_string('status',   'tool_crawler'))
+        get_string('status',   'tool_crawler')),
 ];
 
 $courseid = optional_param('course', 0, PARAM_INT);
@@ -41,7 +41,7 @@ $courserows = [
     new tabobject('broken',   new moodle_url('/admin/tool/crawler/report.php', ['report' => 'broken'] + $courseparam),
         get_string('broken',   'tool_crawler')),
     new tabobject('oversize', new moodle_url('/admin/tool/crawler/report.php', ['report' => 'oversize'] + $courseparam),
-        get_string('oversize', 'tool_crawler'))
+        get_string('oversize', 'tool_crawler')),
 ];
 
 $rows = array_merge(

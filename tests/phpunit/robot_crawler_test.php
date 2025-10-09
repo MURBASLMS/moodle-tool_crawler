@@ -22,6 +22,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+namespace tool_crawler;
+
 use tool_crawler\local\url;
 use tool_crawler\robot\crawler;
 
@@ -37,7 +39,7 @@ require_once(__DIR__ . '/../../constants.php');
  * @copyright  2016 Brendan Heywood <brendan@catalyst-au.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class tool_crawler_robot_crawler_test extends advanced_testcase {
+final class robot_crawler_test extends \advanced_testcase {
 
     /**
      * @var \tool_crawler\robot\crawler Crawler to use in tests.
@@ -47,7 +49,8 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
     /**
      * Setup robot crawler testcase and parent setup
      */
-    protected function setUp():void {
+    protected function setUp(): void {
+        parent::setUp();
         parent::setup();
         $this->resetAfterTest(true);
 
@@ -56,102 +59,102 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
     }
 
     /**
-     * @return array of test cases
-     *
      * Combinations of base and relative parts of URL
+     *
+     * @return array of test cases
      */
-    public function absolute_urls_provider() {
-        return array(
-            array(
+    public function absolute_urls_provider(): array {
+        return [
+            [
                 'base' => 'http://test.com/sub/',
-                'links' => array(
+                'links' => [
                     'mailto:me@test.com' => 'mailto:me@test.com',
                     '/file.php' => 'http://test.com/file.php',
                     'file.php' => 'http://test.com/sub/file.php',
                     '../sub2/file.php' => 'http://test.com/sub2/file.php',
-                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/'
-                )
-            ),
-            array(
+                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/',
+                ],
+            ],
+            [
                 'base' => 'http://test.com/sub1/sub2/',
-                'links' => array(
+                'links' => [
                     'mailto:me@test.com' => 'mailto:me@test.com',
                     '../../file.php' => 'http://test.com/file.php',
                     'file.php' => 'http://test.com/sub1/sub2/file.php',
                     '../sub3/file.php' => 'http://test.com/sub1/sub3/file.php',
-                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/'
-                )
-            ),
-            array(
+                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/',
+                ],
+            ],
+            [
                 'base' => 'http://test.com/sub1/sub2/$%^/../../../',
-                'links' => array(
+                'links' => [
                     'mailto:me@test.com' => 'mailto:me@test.com',
                     '/file.php' => 'http://test.com/file.php',
                     '/sub3/sub4//$%^/../../../file.php' => 'http://test.com/file.php',
-                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/'
-                    )
-            ),
-            array(
+                    'http://elsewhere.com/path/' => 'http://elsewhere.com/path/',
+                    ],
+            ],
+            [
                 'base' => 'http://test.com/sub1/sub2/file1.php',
-                'links' => array(
+                'links' => [
                     'mailto:me@test.com' => 'mailto:me@test.com',
                     'file2.php' => 'http://test.com/sub1/sub2/file2.php',
                     '../file2.php' => 'http://test.com/sub1/file2.php',
-                    'sub3/file2.php' => 'http://test.com/sub1/sub2/sub3/file2.php'
-                )
-            ),
-            array(
+                    'sub3/file2.php' => 'http://test.com/sub1/sub2/sub3/file2.php',
+                ],
+            ],
+            [
                 'base' => 'http://test.com/sub1/foo.php?id=12',
-                'links' => array(
+                'links' => [
                     '/sub2/bar.php?id=34' => 'http://test.com/sub2/bar.php?id=34',
                     '/sub2/bar.php?id=34&foo=bar' => 'http://test.com/sub2/bar.php?id=34&foo=bar',
-                ),
-            ),
-        );
+                ],
+            ],
+        ];
     }
 
     /**
-     * @dataProvider absolute_urls_provider
-     *
      * Executing test cases returned by function provider()
+     *
+     * @dataProvider absolute_urls_provider
      *
      * @param string $base Base part of URL
      * @param array $links Combinations of relative paths of URL and expected result
      */
-    public function test_absolute_urls($base, $links) {
+    public function test_absolute_urls($base, $links): void {
         foreach ($links as $key => $value) {
             $this->assertEquals($value, $this->robot->absolute_url($base, $key));
         }
     }
 
     /**
-     * @return array of test cases
-     *
      * Local and external URLs and their tricky combinations
+     *
+     * @return array of test cases
      */
-    public function should_auth_provider() {
-        return array(
-            array(false, 'http://my_moodle.com', 'http://evil.com/blah/http://my_moodle.com'),
-            array(false, 'http://my_moodle.com', 'http://my_moodle.com.actually.im.evil.com'),
-            array(true,  'http://my_moodle.com', 'http://my_moodle.com'),
-            array(true,  'http://my_moodle.com', 'http://my_moodle.com/whatever/file1.php'),
-            array(false, 'http://my_moodle.com/subdir', 'http://evil.com/blah/http://my_moodle.com/subdir'),
-            array(false, 'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir.actually.im.evil.com'),
-            array(true,  'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir'),
-            array(true,  'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir/whatever/file1.php'),
-        );
+    public function should_auth_provider(): array {
+        return [
+            [false, 'http://my_moodle.com', 'http://evil.com/blah/http://my_moodle.com'],
+            [false, 'http://my_moodle.com', 'http://my_moodle.com.actually.im.evil.com'],
+            [true,  'http://my_moodle.com', 'http://my_moodle.com'],
+            [true,  'http://my_moodle.com', 'http://my_moodle.com/whatever/file1.php'],
+            [false, 'http://my_moodle.com/subdir', 'http://evil.com/blah/http://my_moodle.com/subdir'],
+            [false, 'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir.actually.im.evil.com'],
+            [true,  'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir'],
+            [true,  'http://my_moodle.com/subdir', 'http://my_moodle.com/subdir/whatever/file1.php'],
+        ];
     }
 
     /**
-     * @dataProvider should_auth_provider
-     *
      * Tests method should_be_authenticated($url) of class \tool_crawler\robot\crawler()
+     *
+     * @dataProvider should_auth_provider
      *
      * @param bool $expected
      * @param string $myurl URL of current Moodle installation
      * @param string $testurl URL where we should authenticate
      */
-    public function test_should_be_authenticated($expected, $myurl, $testurl) {
+    public function test_should_be_authenticated($expected, $myurl, $testurl): void {
         global $CFG;
         $CFG->wwwroot = $myurl;
         $this->assertEquals((bool)$expected, $this->robot->should_be_authenticated($testurl));
@@ -161,13 +164,15 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
     /**
      * Tests existence of new plugin parameter 'retentionperiod'
      */
-    public function test_param_retention_exists() {
+    public function test_param_retention_exists(): void {
         $param = get_config('tool_crawler', 'retentionperiod');
         $this->assertNotEmpty($param);
     }
 
-    /** Regression test for Issue #17  */
-    public function test_reset_queries() {
+    /**
+     * Regression test for Issue #17
+     */
+    public function test_reset_queries(): void {
         global $DB;
         // Create a new object.
         $persistent = new url();
@@ -191,7 +196,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
             'ignoreduserid' => null,
             'ignoredtime' => null,
             'httpmsg' => 'OK',
-            'errormsg' => null
+            'errormsg' => null,
         ];
 
         $persistent->from_record((object)$node);
@@ -216,7 +221,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
      * Regression test for Issue #48: database must store URI without HTML-escaping, but URI must still be escaped when it is output
      * to an HTML document.
      */
-    public function test_uri_escaping() {
+    public function test_uri_escaping(): void {
         $baseurl = 'http://crawler.test/';
         $relativeurl = 'course/view.php?id=1&section=2'; // The '&' character is the important part here.
         $expectedurl = $baseurl . $relativeurl;
@@ -241,7 +246,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
     /**
      * Regression test for an issue similar to Issue #48: redirection URI must be escaped when it is output to an HTML document.
      */
-    public function test_redirection_uri_escaping() {
+    public function test_redirection_uri_escaping(): void {
         global $DB;
 
         $url = 'http://crawler.test/course/view.php?id=1&section=2';
@@ -266,7 +271,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
             'ignoreduserid' => null,
             'ignoredtime' => null,
             'httpmsg' => 'OK',
-            'errormsg' => null
+            'errormsg' => null,
         ];
         $persistent = new url();
         $persistent->from_record((object)$node);
@@ -288,7 +293,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
     /**
      * Test for Issue #92: specified dom elements in the config should be excluded.
      */
-    public function test_should_be_excluded() {
+    public function test_should_be_excluded(): void {
         global $DB;
 
         $url = 'http://crawler.test/course/view.php?id=1&section=2';
@@ -310,7 +315,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
             'ignoreduserid' => null,
             'ignoredtime' => null,
             'httpmsg' => 'OK',
-            'errormsg' => null
+            'errormsg' => null,
         ];
         $persistent = new url();
         $persistent->from_record((object)$node);
@@ -323,7 +328,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
 
         $linktoexclude = '<div class="exclude"><a href="http://crawler.test/foo/bar.php"></div>';
 
-        $node = new stdClass();
+        $node = new \stdClass();
         $node->contents = $page . $linktoexclude;
         $node->url      = $url;
         $node->id       = $insertid;
@@ -340,7 +345,7 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
 
         // URL should not exist for crawling.
         $urlstring = 'http://crawler.test/foo/bar.php';
-        $found = $DB->record_exists('tool_crawler_url', array('urlhash' => url::hash_url($urlstring)) );
+        $found = $DB->record_exists('tool_crawler_url', ['urlhash' => url::hash_url($urlstring)] );
         self::assertFalse($found);
     }
 
@@ -349,22 +354,22 @@ class tool_crawler_robot_crawler_test extends advanced_testcase {
      *
      * @return array of potential crawler priority codes.
      */
-    public function priority_provider() {
+    public function priority_provider(): array {
         return [
             ['high' => TOOL_CRAWLER_PRIORITY_HIGH],
             ['normal' => TOOL_CRAWLER_PRIORITY_NORMAL],
-            ['default' => TOOL_CRAWLER_PRIORITY_DEFAULT]
+            ['default' => TOOL_CRAWLER_PRIORITY_DEFAULT],
         ];
     }
 
     /**
-     * @dataProvider priority_provider
-     *
      * Test for issue #108 - passing node crawl priority to child nodes when parsing html.
+     *
+     * @dataProvider priority_provider
      *
      * @param int $parentpriority the priority of the parent queue item
      */
-    public function test_parse_html_priority_inheritance($parentpriority) {
+    public function test_parse_html_priority_inheritance($parentpriority): void {
         global $CFG, $DB;
 
         $parentlocalurl = 'course/view.php?id=1&section=2';
@@ -392,8 +397,8 @@ HTML;
         $parentnode = $this->robot->parse_html($node, $node->externalurl);
 
         // Internal node direct child.
-        $url = new moodle_url('/' . $directchildlocalurl);
-        $node = $DB->get_record('tool_crawler_url', array('urlhash' => url::hash_url($url->raw_out())) );
+        $url = new \moodle_url('/' . $directchildlocalurl);
+        $node = $DB->get_record('tool_crawler_url', ['urlhash' => url::hash_url($url->raw_out())] );
         $node->url = $CFG->wwwroot.'/'.$directchildlocalurl;
         $node->httpcode = 200;
         $node->mimetype = 'text/html';
@@ -427,7 +432,7 @@ HTML;
     /**
      * Test for Issue #120:Specified external urls should be excluded.
      */
-    public function should_be_crawled_provider() {
+    public function should_be_crawled_provider(): array {
         return [
             ['http://moodle.org/', false],
             ['http://validator.w3.org/', false],
@@ -445,7 +450,7 @@ HTML;
      * @param   string $url
      * @param   bool   $expected
      */
-    public function test_should_be_crawled($url, $expected) {
+    public function test_should_be_crawled($url, $expected): void {
         global $CFG;
         $baseurl = 'https://www.example.com/moodle';
         $this->resetAfterTest(true);
@@ -466,7 +471,7 @@ HTML;
      * We must insert the hash of the url whenever we update the tool_crawler_url table.
      *
      */
-    public function test_url_creates_hash() {
+    public function test_url_creates_hash(): void {
         global $DB;
 
         $url = 'http://crawler.test/course/view.php?id=1&section=2';
@@ -488,7 +493,7 @@ HTML;
             'ignoreduserid' => null,
             'ignoredtime' => null,
             'httpmsg' => 'OK',
-            'errormsg' => null
+            'errormsg' => null,
         ];
         $persistent = new url();
         $persistent->from_record((object)$node);
@@ -517,7 +522,7 @@ HTML;
      *
      * @return  array
      */
-    public function crawler_url_string_matches_provider() {
+    public function crawler_url_string_matches_provider(): array {
         return [
             ['/index.php',              '/index.php',           true],
             ['/some/dir/index.php',     '/index.php',           true], // Different from core function.
@@ -552,7 +557,7 @@ HTML;
      * @param   string $patterns
      * @param   bool   $expected
      */
-    public function test_crawler_url_string_matches($string, $patterns, $expected) {
+    public function test_crawler_url_string_matches($string, $patterns, $expected): void {
         $result = $this->robot->crawler_url_string_matches($string, $patterns);
         $this->assertSame($result, $expected);
     }
@@ -562,7 +567,7 @@ HTML;
      *
      * @return  array
      */
-    public function url_validity_check_provider() {
+    public function url_validity_check_provider(): array {
         return [
             ['/index.php', true],
             ['/some/dir/index.php', true],
@@ -573,14 +578,14 @@ HTML;
     }
 
     /**
-     * @dataProvider url_validity_check_provider
-     *
      * Check url validity
+     *
+     * @dataProvider url_validity_check_provider
      *
      * @param string $url the url to test
      * @param bool $expected the expected result
      */
-    public function test_invalid_url($url, $expected) {
+    public function test_invalid_url($url, $expected): void {
         $baseurl = 'https://www.example.com/moodle';
         $this->resetAfterTest(true);
 
@@ -595,7 +600,7 @@ HTML;
      *
      * @return  array
      */
-    public function page_title_validity_check_provider() {
+    public function page_title_validity_check_provider(): array {
         return [
             [['contents' => '<title>Invalid <i>title</i><title><body></body>'], 'Invalid title'],
             [['contents' => '<title>Valid title<title><body></body>'], 'Valid title'],
@@ -603,14 +608,14 @@ HTML;
     }
 
     /**
-     * @dataProvider page_title_validity_check_provider
-     *
      * Test for Issue #143: invalid character in page title.
+     *
+     * @dataProvider page_title_validity_check_provider
      *
      * @param array $node The node to test.
      * @param string $expected
      */
-    public function test_check_page_title_validity($node, $expected) {
+    public function test_check_page_title_validity($node, $expected): void {
         $this->resetAfterTest(true);
         $node = (object) array_merge((array) $node);
         $result = $this->robot->parse_html($node, false);

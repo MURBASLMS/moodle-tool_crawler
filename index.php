@@ -21,6 +21,7 @@
  * @copyright  2016 Brendan Heywood <brendan@catalyst-au.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 require_once(dirname(dirname(dirname(dirname(__FILE__)))) . '/config.php');
 require_once($CFG->libdir . '/adminlib.php');
 require_once(__DIR__ . '/locallib.php');
@@ -67,68 +68,68 @@ if ($queuesize == 0 || $recent == 0) {
 $duration = time() - $crawlstart;
 $eta = floor($duration / $progress + $crawlstart);
 
-$robot = $DB->get_record('user', array('username' => $config->botusername));
+$robot = $DB->get_record('user', ['username' => $config->botusername]);
 
 $table = new html_table();
-$table->head = array(get_string('robotstatus', 'tool_crawler'));
-$table->headspan = array(2, 1);
-$table->data = array(
-    array(
+$table->head = [get_string('robotstatus', 'tool_crawler')];
+$table->headspan = [2, 1];
+$table->data = [
+    [
         get_string('botuser', 'tool_crawler'),
         $robot->username
         . ' | ' . ($boterror ? $boterror : get_string('good', 'tool_crawler'))
         . ' | ' . html_writer::link(new moodle_url('/user/editadvanced.php',
-                array('id' => $robot->id, 'courseid' => 1)), get_string('useraccount', 'tool_crawler'))
+                ['id' => $robot->id, 'courseid' => 1]), get_string('useraccount', 'tool_crawler'))
         . ' | ' . html_writer::link(new moodle_url('/admin/roles/usersroles.php',
-                array('userid' => $robot->id, 'courseid' => 1)), get_string('roles')),
-    ),
-    array(
+                ['userid' => $robot->id, 'courseid' => 1]), get_string('roles')),
+    ],
+    [
         get_string('progress', 'tool_crawler'),
-        get_string('progresseta', 'tool_crawler', array(
+        get_string('progresseta', 'tool_crawler', [
             'percent' => sprintf('%.2f%%', $progress * 100),
             'eta' => userdate($eta),
-        ))
+        ])
         . ' | ' . html_writer::link(new moodle_url('/admin/tool/crawler/resetprogress.php'),
-            get_string('resetprogress', 'tool_crawler'))
-    ),
-    array(
+            get_string('resetprogress', 'tool_crawler')),
+    ],
+    [
         get_string('curcrawlstart', 'tool_crawler'),
-        $crawlstart ? userdate( $crawlstart) : get_string('neverrun', 'tool_crawler')
-    ),
-    array(
+        $crawlstart ? userdate( $crawlstart) : get_string('neverrun', 'tool_crawler'),
+    ],
+    [
         get_string('lastcrawlend', 'tool_crawler'),
-        $crawlend ? userdate( $crawlend) : get_string('neverfinished', 'tool_crawler')
-    ),
-    array(
+        $crawlend ? userdate( $crawlend) : get_string('neverfinished', 'tool_crawler'),
+    ],
+    [
         get_string('lastcrawlproc', 'tool_crawler'),
-        $crawltick ? userdate( $crawltick) : '-'
-    ),
-    array(
+        $crawltick ? userdate( $crawltick) : '-',
+    ],
+    [
         get_string('lastqueuesize', 'tool_crawler'),
-        tool_crawler_numberformat($oldqueuesize)
-    ),
-    array(
+        tool_crawler_numberformat($oldqueuesize),
+    ],
+    [
         get_string('numlinks', 'tool_crawler'),
-        tool_crawler_numberformat($numlinks)
-    ),
-    array(
+        tool_crawler_numberformat($numlinks),
+    ],
+    [
         get_string('queued', 'tool_crawler'),
-        "<a href=\"report.php?report=queued\">" . tool_crawler_numberformat($queuesize) . "</a>"
-    ),
-    array(
+        "<a href=\"report.php?report=queued\">" . tool_crawler_numberformat($queuesize) . "</a>",
+    ],
+    [
         get_string('recent', 'tool_crawler'),
-        "<a href=\"report.php?report=recent\">" . tool_crawler_numberformat($recent) . "</a>"
-    ),
-    array(
+        "<a href=\"report.php?report=recent\">" . tool_crawler_numberformat($recent) . "</a>",
+    ],
+    [
         get_string('broken', 'tool_crawler'),
         "<a href=\"report.php?report=broken\">" . tool_crawler_numberformat($numpageswithurlsbroken)
-                . " / " . tool_crawler_numberformat($numurlsbroken) . "</a>"
-    ),
-    array(
+                . " / " . tool_crawler_numberformat($numurlsbroken) . "</a>",
+    ],
+    [
         get_string('oversize', 'tool_crawler'),
-        "<a href=\"report.php?report=oversize\">" . tool_crawler_numberformat($oversize) . "</a>"
-    ),
-);
+        "<a href=\"report.php?report=oversize\">" . tool_crawler_numberformat($oversize) . "</a>",
+    ],
+];
 
 $report = 'index';
 require('tabs.php');
@@ -136,7 +137,7 @@ echo $tabs;
 echo html_writer::table($table);
 
 $table = new html_table();
-$table->head = array(
+$table->head = [
     get_string('crawlstart', 'tool_crawler'),
     get_string('crawlend', 'tool_crawler'),
     get_string('duration', 'tool_crawler'),
@@ -145,11 +146,11 @@ $table->head = array(
     get_string('numlinks', 'tool_crawler'),
     get_string('broken', 'tool_crawler'),
     get_string('oversize', 'tool_crawler'),
-);
+];
 $datetimeformat = get_string('strftimerecentsecondshtml', 'tool_crawler');
-$table->data = array();
-$table->colclasses = array('', '', '', 'rightalign', 'rightalign', 'rightalign', 'rightalign', 'rightalign');
-$history = $DB->get_records('tool_crawler_history', array(), 'startcrawl DESC', '*', 0, 5);
+$table->data = [];
+$table->colclasses = ['', '', '', 'rightalign', 'rightalign', 'rightalign', 'rightalign', 'rightalign'];
+$history = $DB->get_records('tool_crawler_history', [], 'startcrawl DESC', '*', 0, 5);
 foreach ($history as $record) {
     if ($record->endcrawl) {
         $delta = $record->endcrawl - $record->startcrawl;
@@ -157,7 +158,7 @@ foreach ($history as $record) {
         $delta = time() - $record->startcrawl;
     }
     $duration = sprintf('%02d:%02d:%02d', $delta / 60 / 60, $delta / 60 % 60, $delta % 60);
-    $table->data[] = array(
+    $table->data[] = [
         userdate($record->startcrawl, $datetimeformat),
         $record->endcrawl ? userdate($record->endcrawl, $datetimeformat) : '-',
         $duration,
@@ -166,7 +167,7 @@ foreach ($history as $record) {
         tool_crawler_numberformat($record->links),
         tool_crawler_numberformat($record->broken),
         tool_crawler_numberformat($record->oversize),
-    );
+    ];
 }
 
 echo html_writer::table($table);

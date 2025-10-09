@@ -132,10 +132,10 @@ useridlistid
                                                     new lang_string('excludecoursesdesc',   'tool_crawler'),
                                                     "" ));
 
-        $options = array(
+        $options = [
             0 => new lang_string('no'),
             1 => new lang_string('yes'),
-        );
+        ];
         $settings->add(new admin_setting_configselect('tool_crawler/uselogs',
                                                       new lang_string('uselogs',        'tool_crawler'),
                                                       new lang_string('uselogsdesc',    'tool_crawler'),
@@ -175,13 +175,13 @@ useridlistid
                                                     new lang_string('useheaddesc',       'tool_crawler'),
                                                     '0' ));
 
-        $options = array();
-        foreach (array(
+        $options = [];
+        foreach ([
                     TOOL_CRAWLER_NETWORKSTRAIN_REASONABLE,
                     TOOL_CRAWLER_NETWORKSTRAIN_RESOLUTE,
                     TOOL_CRAWLER_NETWORKSTRAIN_EXCESSIVE,
                     TOOL_CRAWLER_NETWORKSTRAIN_WASTEFUL,
-                ) as $option) {
+                ] as $option) {
             $options[$option] = new lang_string('networkstrain' . $option, 'tool_crawler');
         }
         $settings->add(new admin_setting_configselect('tool_crawler/networkstrain',
@@ -190,15 +190,15 @@ useridlistid
                                                     TOOL_CRAWLER_NETWORKSTRAIN_WASTEFUL,
                                                     $options));
 
-        $options = array(
+        $options = [
             86400 => new lang_string('secondstotime86400'),
             604800 => new lang_string('secondstotime604800'),
             2620800 => new lang_string('nummonths', 'moodle', 1),
             5241600 => new lang_string('nummonths', 'moodle', 2),
             7862400 => new lang_string('nummonths', 'moodle', 3),
             15724800 => new lang_string('nummonths', 'moodle', 6),
-            0 => new lang_string('never')
-        );
+            0 => new lang_string('never'),
+        ];
         $settings->add(new admin_setting_configselect('tool_crawler/retentionperiod',
                                                     new lang_string('retentionperiod',        'tool_crawler'),
                                                     new lang_string('retentionperioddesc',    'tool_crawler'),

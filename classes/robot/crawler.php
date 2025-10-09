@@ -81,13 +81,13 @@ class crawler {
      * @return mixed hash-like object or default array $defaults if no config found.
      */
     public static function get_config() {
-        $defaults = array(
+        $defaults = [
             'crawlstart' => 0,
             'crawlend' => 0,
             'crawltick' => 0,
             'retentionperiod' => 86400, // 1 week.
-            'recentactivity' => 1
-        );
+            'recentactivity' => 1,
+        ];
         $config = (object) array_merge( $defaults, (array) get_config('tool_crawler') );
         return $config;
     }
@@ -105,7 +105,7 @@ class crawler {
         if (!$botusername) {
             return get_string('configmissing', 'tool_crawler');
         }
-        $botuser = $DB->get_record('user', array('username' => $botusername));
+        $botuser = $DB->get_record('user', ['username' => $botusername]);
         if ( !$botuser ) {
             return get_string('botusermissing', 'tool_crawler') .
                 ' <a href="?action=makebot">' . get_string('autocreate', 'tool_crawler') . '</a>';
@@ -118,14 +118,14 @@ class crawler {
         }
         if ($result->redirect) {
             return get_string('bottestpageredirected', 'tool_crawler',
-                array('resredirect' => htmlspecialchars($result->redirect, ENT_NOQUOTES | ENT_HTML401)));
+                ['resredirect' => htmlspecialchars($result->redirect, ENT_NOQUOTES | ENT_HTML401)]);
         }
 
         // When the bot successfully scraped the test page (see above), it was logged in and used its own language. So we have to
         // retrieve the expected string in the language set for the _crawler user_, and not in the _current user’s_ language.
         $oldforcelang = force_current_language($botuser->lang);
         $expectedcontent = get_string('hellorobot', 'tool_crawler',
-                array('botusername' => self::get_config()->botusername));
+                ['botusername' => self::get_config()->botusername]);
         force_current_language($oldforcelang);
 
         $hello = strpos($result->contents, $expectedcontent);
@@ -144,11 +144,11 @@ class crawler {
         // TODO roles?
 
         $botusername  = self::get_config()->botusername;
-        $botuser = $DB->get_record('user', array('username' => $botusername) );
+        $botuser = $DB->get_record('user', ['username' => $botusername] );
         if ($botuser) {
             return $botuser;
         } else {
-            $botuser = (object) array();
+            $botuser = (object) [];
             $botuser->username   = $botusername;
             $botuser->password   = hash_internal_user_password(self::get_config()->botpassword);
             $botuser->firstname  = 'Link checker';
@@ -217,7 +217,7 @@ class crawler {
         }
 
         // Replace '//' or '/./' or '/foo/../' with '/' */.
-        $re = array('#(/\.?/)#', '#/(?!\.\.)[^/]+/\.\./#');
+        $re = ['#(/\.?/)#', '#/(?!\.\.)[^/]+/\.\./#'];
         do {
             $abs = preg_replace($re, '/', $abs, -1, $n);
         } while ($n > 0);
@@ -341,13 +341,13 @@ class crawler {
         // then avoid scraping the URL at all, if it has been excluded.
         $shortname = '';
         if (preg_match('/\/course\/(info|view).php\?id=(\d+)/', $url , $matches) ) {
-            $course = $DB->get_record('course', array('id' => $matches[2]));
+            $course = $DB->get_record('course', ['id' => $matches[2]]);
             if ($course) {
                 $shortname = $course->shortname;
             }
         }
         if (preg_match('/\/enrol\/index.php\?id=(\d+)/', $url , $matches) ) {
-            $course = $DB->get_record('course', array('id' => $matches[1]));
+            $course = $DB->get_record('course', ['id' => $matches[1]]);
             if ($course) {
                 $shortname = $course->shortname;
             }
@@ -358,13 +358,13 @@ class crawler {
                            c.shortname
                       FROM {course_modules} cm
                       JOIN {course} c ON cm.course = c.id
-                     WHERE cm.id = ?", array($matches[3]));
+                     WHERE cm.id = ?", [$matches[3]]);
             if ($cm) {
                 $shortname = $cm->shortname;
             }
         }
         if (preg_match('/\/course\/(.*?)\//', $url, $matches) ) {
-            $course = $DB->get_record('course', array('shortname' => $matches[1]));
+            $course = $DB->get_record('course', ['shortname' => $matches[1]]);
             if ($course) {
                 $shortname = $course->shortname;
             }
@@ -383,7 +383,7 @@ class crawler {
 
         if (!$node) {
             // If not in the queue then add it.
-            $node = (object) array();
+            $node = (object) [];
             $node->timecreated = time();
             $node->url        = $url;
             $node->externalurl = self::is_external($url);
@@ -439,7 +439,7 @@ class crawler {
                 SELECT COUNT(*)
                   FROM {tool_crawler_edge}
                  WHERE lastmod >= ?",
-                array(self::get_config()->crawlstart));
+                [self::get_config()->crawlstart]);
     }
 
     /**
@@ -503,7 +503,7 @@ class crawler {
                 SELECT COUNT(*)
                   FROM {tool_crawler_url}
                  WHERE lastcrawled < ?",
-               array(self::get_config()->crawlstart));
+               [self::get_config()->crawlstart]);
     }
 
     /**
@@ -712,7 +712,7 @@ class crawler {
 
         $elementname = mb_strtolower($node->tag, 'UTF-8');
 
-        $ignoredelements = array('script', 'style');
+        $ignoredelements = ['script', 'style'];
         if (in_array($elementname, $ignoredelements)) {
             return '';
         } else if ($elementname == 'img') {
@@ -833,7 +833,7 @@ class crawler {
         }
 
         // Finds each link in the html and adds to database.
-        $seen = array();
+        $seen = [];
 
         $links = $html->find('a[href]');
         foreach ($links as $e) {
@@ -910,7 +910,7 @@ class crawler {
         }
 
         // For this link, insert or update with the current time for last modified.
-        $link = $DB->get_record('tool_crawler_edge', array('a' => $from->id, 'b' => $to->id));
+        $link = $DB->get_record('tool_crawler_edge', ['a' => $from->id, 'b' => $to->id]);
         if (!$link) {
             $link          = new \stdClass();
             $link->a       = $from->id;
@@ -1136,7 +1136,7 @@ class crawler {
         $sizelimit = TOOL_CRAWLER_REDIRECTION_DOWNLOAD_LIMIT; // Assume at first that we will be redirected.
         $abortdownload = false;
 
-        $chunks = array();
+        $chunks = [];
         $targetisexternal = null; // Cache for whether target resource is external.
         $targetishtml = null; // Cache for whether target resource is an HTML document.
         $targetlengthknown = null; // Cache for whether target resource length is known.
@@ -1234,7 +1234,7 @@ class crawler {
                     // This code path will erroneously be triggered in the case of trailers. Not a big problem, especially not in
                     // the case of well-formed trailers. But we will then reset $httpmsg a bit too early.
                     if (preg_match('@^HTTP/[^ ]+ ([0-9]+) ([^\r\n]*)@', $header, $headerparts)) { // HTTP status-line.
-                        $httpmsg = $headerparts[2];
+                        $httpmsg = clean_param($headerparts[2], PARAM_TEXT);
                     } else {
                         $httpmsg = '';
                     }
@@ -1288,7 +1288,7 @@ class crawler {
             $method = 'GET';
         }
 
-        $result = (object) array();
+        $result = (object) [];
         $result->url              = $url;
 
         $needhttprequest = true; // Whether we have to send (a further) HTTP request.
@@ -1401,7 +1401,7 @@ class crawler {
                         $method = 'GET';
 
                         $sizelimit = TOOL_CRAWLER_REDIRECTION_DOWNLOAD_LIMIT; // Assume at first that we will be redirected.
-                        $chunks = array();
+                        $chunks = [];
                         $firstheaderline = true;
                         $headersize = 0;
                         $targetisexternal = null;
@@ -1515,7 +1515,7 @@ class crawler {
 
         // Do not try to fetch recent courses if uselogs setting is not enabled.
         if ($config->uselogs == false) {
-            return array();
+            return [];
         }
 
         $startingtimerecentactivity = strtotime("-$config->recentactivity days", time());

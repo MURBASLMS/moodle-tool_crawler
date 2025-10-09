@@ -54,12 +54,12 @@ function tool_crawler_link($url, $label, $redirect = '', $labelishtml = false) {
     }
 
     $canviewsitelevelreports = has_capability('moodle/site:config', context_system::instance());
-    $html = $canviewsitelevelreports ? html_writer::link(new moodle_url('url.php', array('url' => $url)), $label) : $label;
+    $html = $canviewsitelevelreports ? html_writer::link(new moodle_url('url.php', ['url' => $url]), $label) : $label;
     $html .= '<br><small>' . html_writer::link($url, htmlspecialchars($url, ENT_NOQUOTES | ENT_HTML401), ['target' => 'link']) . '</small>';
 
     if ($redirect) {
         $linkhtmlsnippet = html_writer::link($redirect, htmlspecialchars($redirect, ENT_NOQUOTES | ENT_HTML401));
-        $html .= "<br>" . get_string('redirect', 'tool_crawler', array('redirectlink' => $linkhtmlsnippet));
+        $html .= "<br>" . get_string('redirect', 'tool_crawler', ['redirectlink' => $linkhtmlsnippet]);
     }
 
     return $html;
@@ -186,15 +186,15 @@ function tool_crawler_sql_oversize_filter($tablealias = null) {
               )";
 
     $bigfilesize = get_config('tool_crawler', 'bigfilesize');
-    $params = array(
+    $params = [
             $bigfilesize * 1000000,
             TOOL_CRAWLER_FILESIZE_UNKNOWN,
-            );
+            ];
 
-    return array(
+    return [
         'wherecondition' => $where,
         'params' => $params,
-    );
+    ];
 }
 
 /**
@@ -205,7 +205,7 @@ function tool_crawler_sql_oversize_filter($tablealias = null) {
  */
 function tool_crawler_url_gen_table($data) {
     $table = new html_table();
-    $table->head = array(
+    $table->head = [
         get_string('lastcrawledtime', 'tool_crawler'),
         get_string('linktext', 'tool_crawler'),
         get_string('idattr', 'tool_crawler'),
@@ -213,9 +213,9 @@ function tool_crawler_url_gen_table($data) {
         get_string('size', 'tool_crawler'),
         get_string('url', 'tool_crawler'),
         get_string('mimetype', 'tool_crawler'),
-    );
+    ];
     $datetimeformat = get_string('strftimerecentsecondshtml', 'tool_crawler');
-    $table->data = array();
+    $table->data = [];
     foreach ($data as $row) {
         $title = trim($row->title);
         if ($title == "") {
@@ -223,7 +223,7 @@ function tool_crawler_url_gen_table($data) {
         }
         $code = tool_crawler_http_code($row);
         $idattr = htmlspecialchars($row->idattr, ENT_NOQUOTES | ENT_HTML401);
-        $data = array(
+        $data = [
             userdate($row->lastcrawled, $datetimeformat),
             htmlspecialchars($row->text, ENT_NOQUOTES | ENT_HTML401),
             str_replace(' #', '<br>#', $idattr),
@@ -231,7 +231,7 @@ function tool_crawler_url_gen_table($data) {
             htmlspecialchars(tool_crawler_displaysize($row), ENT_NOQUOTES | ENT_HTML401),
             tool_crawler_link($row->target, $title, $row->redirect),
             htmlspecialchars($row->mimetype, ENT_NOQUOTES | ENT_HTML401),
-        );
+        ];
         $table->data[] = $data;
     }
     return html_writer::table($table);
@@ -250,9 +250,9 @@ function tool_crawler_url_create_page($url) {
     $context = context_system::instance();
     require_capability('moodle/site:config', $context);
 
-    $navurl = new moodle_url('/admin/tool/crawler/url.php', array(
-        'url' => $url
-    ));
+    $navurl = new moodle_url('/admin/tool/crawler/url.php', [
+        'url' => $url,
+    ]);
     $PAGE->set_context($context);
     $PAGE->set_url($navurl);
     $PAGE->set_pagelayout('admin');
@@ -266,7 +266,7 @@ function tool_crawler_url_create_page($url) {
     $urldetailshelp = preg_replace('/(\r\n?|\n)/', '<br>', $urldetailshelp);
     $page .= '<p>' . $urldetailshelp . '</p>';
 
-    $urlrec = $DB->get_record('tool_crawler_url', array('urlhash' => url::hash_url($url)));
+    $urlrec = $DB->get_record('tool_crawler_url', ['urlhash' => url::hash_url($url)]);
     $page .= '<h2>' . tool_crawler_link($url, $urlrec->title, $urlrec->redirect) . '</h2>';
 
     $page .= '<h3>' . htmlspecialchars(get_string('outgoingurls', 'tool_crawler'), ENT_NOQUOTES | ENT_HTML401) . '</h3>';
@@ -290,7 +290,7 @@ function tool_crawler_url_create_page($url) {
            JOIN {tool_crawler_url} t ON t.id = l.b
           WHERE f.urlhash = ?
        ORDER BY f.lastcrawled DESC
-    ", array(url::hash_url($url)));
+    ", [url::hash_url($url)]);
 
     $page .= tool_crawler_url_gen_table($data);
 
@@ -315,7 +315,7 @@ function tool_crawler_url_create_page($url) {
            JOIN {tool_crawler_url} t ON t.id = l.b
           WHERE t.urlhash = ?
        ORDER BY f.lastcrawled DESC
-    ", array(url::hash_url($url)));
+    ", [url::hash_url($url)]);
 
     $page .= tool_crawler_url_gen_table($data);
 
