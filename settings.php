@@ -208,7 +208,7 @@ useridlistid
         $settings->add(new admin_setting_configcheckbox('tool_crawler/disablebot',
                                                         new lang_string('disablebot',         'tool_crawler'),
                                                         new lang_string('disablebotdesc',     'tool_crawler'),
-                                                        '0' ));
+                                                        '1' ));
 
         $options = [
             0 => new lang_string('debugoff', 'tool_crawler'),
