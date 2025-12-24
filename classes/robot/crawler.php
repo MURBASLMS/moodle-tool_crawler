@@ -556,7 +556,9 @@ class crawler {
                 if ($verbose) {
                     echo "Shutting down crawler early\n";
                 }
-                return true;
+                // False means we still have more in the queue to process.
+                set_config('crawltick', time(), 'tool_crawler');
+                return false;
             }
 
             if (empty($nodes)) {
