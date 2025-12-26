@@ -75,6 +75,7 @@ $robot = $DB->get_record('user', ['username' => $config->botusername]);
 $table = new html_table();
 $table->head = [get_string('robotstatus', 'tool_crawler')];
 $table->headspan = [2, 1];
+$table->attributes['class'] = 'generaltable table table-hover w-auto';
 $table->data = [
     [
         get_string('botuser', 'tool_crawler'),
@@ -169,6 +170,7 @@ $table->head = [
 ];
 $datetimeformat = get_string('strftimerecentsecondshtml', 'tool_crawler');
 $table->data = [];
+$table->attributes['class'] = 'generaltable table table-hover w-auto';
 $table->colclasses = ['', '', '', 'rightalign', 'rightalign', 'rightalign', 'rightalign', 'rightalign'];
 $history = $DB->get_records('tool_crawler_history', [], 'startcrawl DESC', '*', 0, 5);
 foreach ($history as $record) {
