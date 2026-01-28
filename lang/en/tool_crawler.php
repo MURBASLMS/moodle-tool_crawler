@@ -152,6 +152,7 @@ $string['oversize'] = 'Big / slow links';
 $string['oversize_header'] = '<p>Big files with multiple incoming links to them will be duplicated.</p>';
 $string['pluginname'] = 'Link crawler robot';
 $string['priority'] = 'Priority';
+$string["privacy:no_data_reason"] = "The crawler plugin does not store any personal data.";
 $string['progress'] = 'Progress';
 $string['progresseta'] = '{$a->percent}; ETA is {$a->eta}';
 $string['queued'] = 'Queued';
@@ -197,8 +198,4 @@ $string['useraccount'] = 'User account';
 $string['useragent'] = 'Bot user agent string';
 $string['useragentdesc'] = 'The user agent name to use in the HTTP headers, without a version. The version of this plugin is automatically appended. This setting can be left empty and will default to the built in Bot useragent.';
 $string['whenqueued'] = 'When queued';
-/*
- * Privacy provider (GDPR)
- */
-$string["privacy:no_data_reason"] = "The crawler plugin does not store any personal data.";
 $string['yes'] = 'Yes';
