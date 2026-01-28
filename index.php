@@ -71,11 +71,11 @@ $duration = time() - $crawlstart;
 $eta = floor($duration / $progress + $crawlstart);
 
 $robot = $DB->get_record('user', ['username' => $config->botusername]);
-$botrowdata = array(get_string('botuser', 'tool_crawler'));
+$botrowdata = [get_string('botuser', 'tool_crawler')];
 
 // Do not display links to bot user if it doesn't exist
 if ($robot) {
-    $botrowdata[] = implode(' | ', array(
+    $botrowdata[] = implode(' | ', [
         $robot->username,
         $boterror ? $boterror : get_string('good', 'tool_crawler'),
         html_writer::link(
@@ -92,7 +92,7 @@ if ($robot) {
             ),
             get_string('roles')
         ),
-    ));
+    ]);
 } else {
     $botrowdata[] = $boterror;
 }
