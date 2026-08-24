@@ -39,6 +39,7 @@ $url = new \tool_crawler\local\url();
 $config = $robot::get_config();
 
 if ($action == 'makebot') {
+    require_sesskey();
     $botuser = $robot->auto_create_bot();
 }
 
