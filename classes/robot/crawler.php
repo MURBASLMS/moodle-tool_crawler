@@ -1141,6 +1141,13 @@ class crawler {
         curl_setopt($s, CURLOPT_TIMEOUT, $config->maxtime);
         if ($this->should_be_authenticated($url)) {
             curl_setopt($s, CURLOPT_USERPWD, $config->botusername . ':' . $config->botpassword);
+
+            // Some auth plugins (e.g. auth_oidc with "forceredirect" enabled) unconditionally bounce
+            // unauthenticated hits on the login page to an external IdP, regardless of $CFG->alternateloginurl.
+            // auth_oidc explicitly supports a `noredirect` GET param for other plugins/scripts to suppress this
+            // (see auth_oidc\auth::should_login_redirect()). It sets $SESSION->oidc = 0 which persists for the
+            // rest of this crawl's cookie-jar-backed session, so we only need to add it once here.
+            $url = self::add_noredirect_param($url);
         }
         curl_setopt($s, CURLOPT_USERAGENT, $useragent);
         curl_setopt($s, CURLOPT_MAXREDIRS, 5);
@@ -1520,6 +1527,25 @@ class crawler {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Appends noredirect=1 to a URL if not already present.
+     *
+     * Some auth plugins (notably auth_oidc with "forceredirect" enabled) auto-redirect any
+     * unauthenticated hit on the login page straight to an external IdP, independently of
+     * $CFG->alternateloginurl. auth_oidc (and some other auth plugins) explicitly look for this
+     * GET param to suppress that behaviour for automated/API clients.
+     *
+     * @param string $url
+     * @return string
+     */
+    public static function add_noredirect_param($url) {
+        if (preg_match('/(?:\?|&)noredirect=/', $url)) {
+            return $url;
+        }
+        $separator = (strpos($url, '?') === false) ? '?' : '&';
+        return $url . $separator . 'noredirect=1';
     }
 
     /**
