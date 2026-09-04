@@ -8,6 +8,7 @@
 * [Installation](#installation)
 * [Configuration](#configuration)
 * [Testing](#testing)
+* [Single Sign-On (SAML/OIDC) sites](#single-sign-on-samloidc-sites)
 * [Debugging](#debugging)
 * [Reports](#reports)
 * [Support](#support)
@@ -187,6 +188,52 @@ cron cycles, you can watch it's progress in
 and
 
 /admin/tool/crawler/report.php?report=recent
+
+# Single Sign-On (SAML/OIDC) sites
+
+If your site forces all logins through an external Identity Provider (e.g.
+`auth_oidc` for Microsoft/Azure AD, or `auth_saml2`), the crawler bot's HTTP
+Basic Auth credentials can get hijacked by the SSO redirect before
+`auth_basic` ever gets a chance to authenticate it, since the bot has no way
+to complete an interactive IdP login flow. Two things are required to make
+the crawler work alongside forced SSO:
+
+1. **`auth_basic` must be enabled**, not just installed (see Step 2 above).
+   `require_login()` only calls `pre_loginpage_hook()` for auth plugins in
+   `$CFG->auth`, so if `basic` isn't in that list the bot's credentials are
+   never inspected at all, regardless of anything else being configured
+   correctly.
+
+2. **Bypass any "force redirect straight to the IdP" setting/URL** for the
+   bot's own requests. Two different mechanisms commonly cause this,
+   depending on how your site enforces SSO:
+
+   - If `$CFG->alternateloginurl` is set (often in `config.php`) to point
+     directly at an auth plugin's landing page (e.g. `/auth/oidc`,
+     `/auth/saml2`), that landing page may redirect unconditionally with no
+     way to opt out. In that case `config.php` needs to conditionally avoid
+     setting `alternateloginurl` for the bot's own requests, e.g. by
+     detecting the crawler's User-Agent (`MoodleBot`) together with the
+     presence of a Basic Auth header, and/or CLI requests. Only then does
+     `require_login()` fall back to Moodle's normal `login/index.php`, where
+     `auth_basic`'s hook gets a chance to run.
+   - Separately, some auth plugins (e.g. `auth_oidc`'s `forceredirect`
+     setting) auto-redirect *any* unauthenticated hit on the standard
+     `login/index.php` straight to the IdP, independently of
+     `alternateloginurl`. The crawler already works around this by appending
+     `noredirect=1` to authenticated requests (see
+     `crawler::add_noredirect_param()`), which `auth_oidc` explicitly checks
+     for and honours by suppressing the forced redirect for the rest of that
+     session/cookie-jar. If you use a different SSO plugin, check whether it
+     supports an equivalent opt-out parameter.
+
+If the bot test on `/admin/tool/crawler/index.php` reports "Bot test page was
+redirected to ...", check the redirect target: a redirect to your IdP
+(`login.microsoftonline.com`, your SAML IdP, etc.) usually means #2 above
+(`alternateloginurl`/forced redirect), while a redirect to your own
+`/login/index.php` usually means auth_basic itself isn't authenticating the
+request (check #1, and also check `auth_basic`'s own "Debug logging" setting
+for step-by-step detail on what it saw).
 
 # Debugging
 
