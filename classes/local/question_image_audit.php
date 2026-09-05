@@ -580,6 +580,11 @@ class question_image_audit {
         $filename = array_pop($parts);
         $filepath = '/' . (empty($parts) ? '' : implode('/', $parts) . '/');
 
+        // Strip a trailing cache-busting query string (e.g. "?1773639139900") and/or fragment - Moodle
+        // commonly appends these to force a browser refetch after a file is re-uploaded/replaced. They are
+        // not part of the actual stored filename, so must not be included when looking it up.
+        $filename = preg_replace('/[?#].*$/', '', $filename);
+
         if ($filename === '' || $filename === null) {
             return false;
         }
