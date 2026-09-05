@@ -78,6 +78,48 @@ $filename  = $options['filename'];
 $component = $options['component'];
 $filearea  = $options['filearea'];
 
+cli_writeln("Site wwwroot: {$CFG->wwwroot}");
+cli_writeln('');
+
+cli_writeln(str_repeat('=', 78));
+cli_writeln("0a. Does mdl_context row {$contextid} exist at all, and what is it?");
+cli_writeln(str_repeat('=', 78));
+$ctxrow = $DB->get_record('context', ['id' => $contextid]);
+if ($ctxrow) {
+    cli_writeln("FOUND: contextlevel={$ctxrow->contextlevel} instanceid={$ctxrow->instanceid} path={$ctxrow->path}");
+} else {
+    cli_writeln("NOT FOUND - contextid {$contextid} does not exist in mdl_context at all.");
+}
+
+cli_writeln('');
+cli_writeln(str_repeat('=', 78));
+cli_writeln("0b. ALL mdl_files rows for contextid={$contextid} + filename={$filename}, ignoring itemid/component/filearea:");
+cli_writeln(str_repeat('=', 78));
+$broadfiles = $DB->get_records('files', ['contextid' => $contextid, 'filename' => $filename]);
+if ($broadfiles) {
+    foreach ($broadfiles as $f) {
+        cli_writeln("  file id={$f->id} component={$f->component} filearea={$f->filearea} itemid={$f->itemid} "
+            . "filepath={$f->filepath} filesize={$f->filesize}");
+    }
+} else {
+    cli_writeln("  NONE FOUND - no file named '{$filename}' exists anywhere under contextid={$contextid}.");
+}
+
+cli_writeln('');
+cli_writeln(str_repeat('=', 78));
+cli_writeln("0c. ALL mdl_files rows with filename={$filename}, ANY context (top 20):");
+cli_writeln(str_repeat('=', 78));
+$anyfiles = $DB->get_records('files', ['filename' => $filename], 'id DESC', '*', 0, 20);
+if ($anyfiles) {
+    foreach ($anyfiles as $f) {
+        cli_writeln("  file id={$f->id} contextid={$f->contextid} component={$f->component} "
+            . "filearea={$f->filearea} itemid={$f->itemid} filepath={$f->filepath} filesize={$f->filesize}");
+    }
+} else {
+    cli_writeln("  NONE FOUND anywhere on this site with that filename.");
+}
+
+cli_writeln('');
 cli_writeln(str_repeat('=', 78));
 cli_writeln("1. Does the file itself exist in mdl_files?");
 cli_writeln(str_repeat('=', 78));
