@@ -107,10 +107,20 @@ class question_image_audit {
     }
 
     /**
-     * Matches pluginfile.php URLs of the form pluginfile.php/<contextid>/<component>/<filearea>/<itemid>/<path>.
+     * Matches pluginfile.php OR draftfile.php URLs of the form
+     * (pluginfile|draftfile).php/<contextid>/<component>/<filearea>/<itemid>/<path>.
+     *
+     * draftfile.php references are always broken content if found saved into permanent question data:
+     * they point at a user's private, temporary draft file area (component=user, filearea=draft), which
+     * is access-checked against session/ownership of that specific user rather than course enrolment or
+     * any capability, and is garbage-collected entirely after $CFG->draftfilelifetime (7 days by
+     * default). This most commonly happens when an image is pasted directly from Word/clipboard into the
+     * question editor and the expected rewrite to a permanent @@PLUGINFILE@@ token doesn't happen on
+     * save.
      */
     const PLUGINFILE_REGEX =
-        '#pluginfile\.php/(?<contextid>\d+)/(?<component>[a-zA-Z0-9_]+)/(?<filearea>[a-zA-Z0-9_]+)/(?<itemid>\d+)/(?<path>[^"\'\)\s<>]*)#';
+        '#(?<filetype>pluginfile|draftfile)\.php/(?<contextid>\d+)/(?<component>[a-zA-Z0-9_]+)/'
+        . '(?<filearea>[a-zA-Z0-9_]+)/(?<itemid>\d+)/(?<path>[^"\'\)\s<>]*)#';
 
     /**
      * Runs the audit.
@@ -204,6 +214,38 @@ class question_image_audit {
 
                 foreach (self::find_pluginfile_refs($ref->text) as $match) {
                     $stats['pluginfilerefsfound']++;
+
+                    $isdraftfile = ($match['filetype'] === 'draftfile');
+
+                    if ($isdraftfile) {
+                        // draftfile.php references are always broken content wherever they end up saved:
+                        // draft areas are owned by, and access-checked against, the single user who was
+                        // editing at the time, not against course enrolment/capability, and they are
+                        // eventually garbage collected entirely. No context-membership check applies.
+                        $embeddedcontextid = (int) $match['contextid'];
+                        $filerecord = self::find_file_record($match);
+
+                        $issues[] = self::build_issue_row(
+                            $q,
+                            $questionusages,
+                            $source,
+                            $ref,
+                            $match,
+                            $embeddedcontextid,
+                            false,
+                            false,
+                            false,
+                            $filerecord,
+                            true
+                        );
+                        $stats['issuesfound'] = count($issues);
+
+                        if ($limit && count($issues) >= $limit) {
+                            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
+                            return $issues;
+                        }
+                        continue;
+                    }
 
                     $embeddedcontextid = (int) $match['contextid'];
                     $valid = $validcontexts[$qbe] ?? [];
@@ -455,6 +497,7 @@ class question_image_audit {
         $refs = [];
         foreach ($matches as $m) {
             $refs[] = [
+                'filetype'  => $m['filetype'],
                 'contextid' => $m['contextid'],
                 'component' => $m['component'],
                 'filearea'  => $m['filearea'],
@@ -537,6 +580,7 @@ class question_image_audit {
      * @param bool      $missing
      * @param bool      $oversized
      * @param \stdClass|false $filerecord
+     * @param bool      $isdraftfile Whether $match is a draftfile.php reference (always broken).
      * @return \stdClass
      */
     protected static function build_issue_row(
@@ -549,11 +593,15 @@ class question_image_audit {
         $foreigncontext,
         $missing,
         $oversized,
-        $filerecord
+        $filerecord,
+        $isdraftfile = false
     ) {
         global $CFG;
 
         $issuetypes = [];
+        if ($isdraftfile) {
+            $issuetypes[] = 'draftfile-reference';
+        }
         if ($foreigncontext) {
             $issuetypes[] = 'foreign-context';
         }
@@ -579,8 +627,10 @@ class question_image_audit {
         $row->sourcefield = $ref->field;
         $row->courses = implode('; ', array_unique($courselabels)) ?: '(not currently used in any quiz)';
         $row->quizlinks = implode('; ', array_unique($quizlinks));
-        $row->embeddedcontext = self::describe_context($embeddedcontextid);
-        $row->embeddedurl = "pluginfile.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
+        $row->embeddedcontext = $isdraftfile
+            ? self::describe_context($embeddedcontextid) . ' [owning user\'s private draft file area]'
+            : self::describe_context($embeddedcontextid);
+        $row->embeddedurl = "{$match['filetype']}.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
             . "{$match['itemid']}/{$match['path']}";
         $row->issuetypes = implode(',', $issuetypes);
         $row->filesize = $filerecord ? $filerecord->filesize : null;

@@ -206,13 +206,20 @@ they do a quick check themselves.
 
 `cli/check_question_images.php` audits this directly against the database
 (no HTTP requests at all, runs in seconds/minutes even across a whole site).
-For every embedded `pluginfile.php` reference in a question's text/feedback/
-answers, it checks:
+For every embedded `pluginfile.php` **or `draftfile.php`** reference in a
+question's text/feedback/answers, it checks:
 
-- **foreign-context**: the contextid embedded in the URL doesn't match the
-  question's owning question-bank category context, nor any context it is
-  currently used from (e.g. a live quiz's course-module context) - i.e. a
-  student genuinely cannot resolve it.
+- **draftfile-reference**: the URL is a `draftfile.php` reference (a
+  private, temporary per-user editing area), most commonly left behind when
+  an image was pasted directly from Word/clipboard into the question editor
+  and the expected rewrite to a permanent `@@PLUGINFILE@@` token didn't
+  happen on save. Always broken for everyone except (sometimes) the original
+  author while still logged in, and eventually purged entirely by cron after
+  `$CFG->draftfilelifetime` (7 days by default).
+- **foreign-context**: the contextid embedded in a `pluginfile.php` URL
+  doesn't match the question's owning question-bank category context, nor
+  any context it is currently used from (e.g. a live quiz's course-module
+  context) - i.e. a student genuinely cannot resolve it.
 - **missing-file**: the referenced file no longer exists at all.
 - **oversized**: the referenced file is at or above a configurable size
   threshold (default 1 MB).
