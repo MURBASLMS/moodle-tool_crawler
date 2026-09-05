@@ -22,18 +22,22 @@ defined('MOODLE_INTERNAL') || die();
  * Audits quiz/question content for embedded pluginfile.php image (and other file) references that
  * a real student would not actually be able to load.
  *
- * Unlike the generic tool_crawler HTTP crawl, this works entirely at the database level: it compares
- * the contextid literally embedded in a pluginfile.php URL against the set of contexts the question
- * is legitimately associated with (its owning question_category context, and every context it is
- * currently referenced from via question_references, e.g. a quiz's course-module context).
+ * Unlike the generic tool_crawler HTTP crawl, this works entirely at the database level. A properly
+ * authored question image (inserted via the file picker) is always saved by Moodle with a pluginfile.php
+ * URL whose contextid/component/filearea/itemid are the question's *own*, current values - that is, the
+ * question's owning question_categories.contextid, and (depending on field) either the question's own id
+ * or the specific answer/hint row's own id. This is fixed at save time by file_save_draft_area_files()
+ * and does not depend on, or vary by, which course/quiz is currently using the question - a question
+ * pulled from a shared/faculty-level question bank is expected to keep referencing that bank's own
+ * context regardless of which course's quiz uses it.
  *
- * The most common real-world cause this is designed to catch: a question was authored (or rolled over
- * from a previous offering) with a raw pluginfile.php URL pasted into the HTML source of the question
- * text/feedback/answer, instead of using the file picker. That URL bakes in the *old* course's
- * contextid. Moodle's file serving checks the contextid actually present in the URL, so a student
- * enrolled only in the new offering has no access to that old context and gets a permission failure,
- * even though staff who happen to also have access to (or broader capabilities across) the old course
- * don't notice anything wrong.
+ * So the one reliable question to ask of every embedded pluginfile.php reference is: does it still point
+ * at *this exact question's own* current context/item, or does it point at something else entirely
+ * (typically: a different, unrelated, "old unit" question/course - usually because a raw absolute URL
+ * was pasted into the HTML source rather than inserted via the file picker/file import mechanism)? If it
+ * points at something else, no amount of enrolment in the current course will make Moodle serve it,
+ * because it isn't actually this question's file at all - while staff who happen to also have access to
+ * that other, unrelated context won't notice anything wrong when they view it themselves.
  *
  * It also flags any embedded file that no longer exists at all (genuinely broken for everyone), and
  * any embedded file over a configurable size threshold (oversized images).
@@ -50,13 +54,17 @@ class question_image_audit {
     /**
      * Content sources to scan for embedded pluginfile.php references.
      *
-     * Each entry describes a table/fields combination to scan. This deliberately covers the highest
-     * traffic question types first (multichoice, truefalse, shortanswer, essay, match, numerical, all
-     * of which use the core `question` and `question_answers` tables) rather than attempting to be
-     * exhaustive for every third-party question type out of the box. Add more entries here (e.g. for
-     * ddwtos, gapselect, coderunner, ...) if you use those types and want them covered too.
+     * Each entry describes a table/fields combination to scan, plus 'itemidbasis' - what the itemid in a
+     * *legitimate* pluginfile.php reference for that field should equal:
+     *  - 'question': the question's own id (used for the question's own text/feedback areas).
+     *  - 'row':      the specific source row's own id (used for per-answer/per-hint areas).
+     *  - null:       not confidently known for this field, so the itemid isn't strictly checked (only
+     *                the context is), to avoid false positives.
      *
-     * Each source must produce rows with at least: questionid, and one or more text fields.
+     * This deliberately covers the highest traffic question types first (multichoice, truefalse,
+     * shortanswer, essay, match, numerical, all of which use the core `question` and `question_answers`
+     * tables) rather than attempting to be exhaustive for every third-party question type out of the box.
+     * Add more entries here (e.g. for ddwtos, gapselect, coderunner, ...) if you use those types too.
      *
      * @return array
      */
@@ -67,60 +75,58 @@ class question_image_audit {
                 'table' => 'question',
                 'idfield' => 'id',
                 'fields' => ['questiontext', 'generalfeedback'],
+                'itemidbasis' => 'question',
             ],
             // Multi-try hints (used by interactive/adaptive behaviours across most qtypes).
             [
                 'table' => 'question_hints',
                 'idfield' => 'questionid',
                 'fields' => ['hint'],
+                'itemidbasis' => 'row',
             ],
             // Answers and per-answer feedback (multichoice, truefalse, shortanswer, numerical, ...).
             [
                 'table' => 'question_answers',
                 'idfield' => 'question',
                 'fields' => ['answer', 'feedback'],
+                'itemidbasis' => 'row',
             ],
             // Multichoice whole-question feedback.
             [
                 'table' => 'qtype_multichoice_options',
                 'idfield' => 'questionid',
                 'fields' => ['correctfeedback', 'partiallycorrectfeedback', 'incorrectfeedback'],
+                'itemidbasis' => 'question',
             ],
             // Match whole-question feedback and subquestion text.
             [
                 'table' => 'qtype_match_options',
                 'idfield' => 'questionid',
                 'fields' => ['correctfeedback', 'partiallycorrectfeedback', 'incorrectfeedback'],
+                'itemidbasis' => 'question',
             ],
             [
                 'table' => 'qtype_match_subquestions',
                 'idfield' => 'questionid',
                 'fields' => ['questiontext'],
+                'itemidbasis' => null,
             ],
             // Essay grader info / response template (visible to graders/students respectively).
             [
                 'table' => 'qtype_essay_options',
                 'idfield' => 'questionid',
                 'fields' => ['graderinfo', 'responsetemplate'],
+                'itemidbasis' => null,
             ],
         ];
     }
 
     /**
-     * Matches pluginfile.php OR draftfile.php URLs of the form
-     * (pluginfile|draftfile).php/<contextid>/<component>/<filearea>/<itemid>/<path>.
-     *
-     * draftfile.php references are always broken content if found saved into permanent question data:
-     * they point at a user's private, temporary draft file area (component=user, filearea=draft), which
-     * is access-checked against session/ownership of that specific user rather than course enrolment or
-     * any capability, and is garbage-collected entirely after $CFG->draftfilelifetime (7 days by
-     * default). This most commonly happens when an image is pasted directly from Word/clipboard into the
-     * question editor and the expected rewrite to a permanent @@PLUGINFILE@@ token doesn't happen on
-     * save.
+     * Matches pluginfile.php URLs of the form pluginfile.php/<contextid>/<component>/<filearea>/<itemid>/<path>.
      */
     const PLUGINFILE_REGEX =
-        '#(?<filetype>pluginfile|draftfile)\.php/(?<contextid>\d+)/(?<component>[a-zA-Z0-9_]+)/'
-        . '(?<filearea>[a-zA-Z0-9_]+)/(?<itemid>\d+)/(?<path>[^"\'\)\s<>]*)#';
+        '#pluginfile\.php/(?<contextid>\d+)/(?<component>[a-zA-Z0-9_]+)/(?<filearea>[a-zA-Z0-9_]+)/'
+        . '(?<itemid>\d+)/(?<path>[^"\'\)\s<>]*)#';
 
     /**
      * Runs the audit.
@@ -164,9 +170,9 @@ class question_image_audit {
         }
         $stats['entriesfound'] = $entryids !== null ? count($entryids) : null; // null = "all" (site-wide run).
 
-        // Map question.id => question_bank_entries.id, and question.id => qtype/name/course context info,
-        // restricted to the latest version of each entry (we don't want to double report every historical
-        // version of a question, only what is/was actually deliverable).
+        // Map question.id => question_bank_entries.id, and question.id => qtype/name, restricted to the
+        // latest version of each entry (we don't want to double report every historical version of a
+        // question, only what is/was actually deliverable).
         $questionmap = self::get_question_map($entryids);
         $stats['questionsscanned'] = count($questionmap);
 
@@ -175,12 +181,14 @@ class question_image_audit {
             return [];
         }
 
-        // For every question_bank_entries.id: the owning context (question_categories.contextid), and
-        // every "using" context it is currently referenced from (e.g. a quiz's course-module context).
-        $validcontexts = self::get_valid_contexts_by_entry(array_column($questionmap, 'questionbankentryid'));
+        // For every question_bank_entries.id: the question's own, current owning context - the *only*
+        // legitimate context for a pluginfile.php reference embedded in that question's own content,
+        // regardless of which course/quiz is currently using the question.
+        $owningcontexts = self::get_owning_contexts_by_entry(array_column($questionmap, 'questionbankentryid'));
 
-        // Where is each question_bank_entries.id actually used right now? (for reporting + optional
-        // --courseid filtering).
+        // Where is each question_bank_entries.id actually used right now? Purely for reporting (so a
+        // human can see at a glance whether the owning context's course matches) + optional --courseid
+        // filtering.
         $usages = self::get_usages_by_entry(array_column($questionmap, 'questionbankentryid'));
 
         $matchedquizzes = [];
@@ -212,51 +220,29 @@ class question_image_audit {
                     continue;
                 }
 
+                $owningcontextid = $owningcontexts[$qbe] ?? null;
+                $expecteditemid = null;
+                if ($source['itemidbasis'] === 'question') {
+                    $expecteditemid = $q->id;
+                } else if ($source['itemidbasis'] === 'row') {
+                    $expecteditemid = $ref->rowid;
+                }
+
                 foreach (self::find_pluginfile_refs($ref->text) as $match) {
                     $stats['pluginfilerefsfound']++;
 
-                    $isdraftfile = ($match['filetype'] === 'draftfile');
-
-                    if ($isdraftfile) {
-                        // draftfile.php references are always broken content wherever they end up saved:
-                        // draft areas are owned by, and access-checked against, the single user who was
-                        // editing at the time, not against course enrolment/capability, and they are
-                        // eventually garbage collected entirely. No context-membership check applies.
-                        $embeddedcontextid = (int) $match['contextid'];
-                        $filerecord = self::find_file_record($match);
-
-                        $issues[] = self::build_issue_row(
-                            $q,
-                            $questionusages,
-                            $source,
-                            $ref,
-                            $match,
-                            $embeddedcontextid,
-                            false,
-                            false,
-                            false,
-                            $filerecord,
-                            true
-                        );
-                        $stats['issuesfound'] = count($issues);
-
-                        if ($limit && count($issues) >= $limit) {
-                            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
-                            return $issues;
-                        }
-                        continue;
-                    }
-
                     $embeddedcontextid = (int) $match['contextid'];
-                    $valid = $validcontexts[$qbe] ?? [];
+                    $embeddeditemid    = (int) $match['itemid'];
 
-                    $foreigncontext = !in_array($embeddedcontextid, $valid, true);
+                    $foreigncontext = ($owningcontextid !== null && $embeddedcontextid !== (int) $owningcontextid);
+                    $wrongitem = (!$foreigncontext && $expecteditemid !== null
+                        && $embeddeditemid !== (int) $expecteditemid);
 
                     $filerecord = self::find_file_record($match);
                     $missing    = ($filerecord === false);
                     $oversized  = ($filerecord && $filerecord->filesize >= $oversizebytes);
 
-                    if (!$foreigncontext && !$missing && !$oversized) {
+                    if (!$foreigncontext && !$wrongitem && !$missing && !$oversized) {
                         continue; // Nothing wrong with this reference.
                     }
 
@@ -266,8 +252,9 @@ class question_image_audit {
                         $source,
                         $ref,
                         $match,
-                        $embeddedcontextid,
+                        $owningcontextid,
                         $foreigncontext,
+                        $wrongitem,
                         $missing,
                         $oversized,
                         $filerecord
@@ -348,13 +335,15 @@ class question_image_audit {
     }
 
     /**
-     * Returns questionbankentryid => [contextid, ...] of every context the question is legitimately
-     * associated with: its owning category context, plus every context it is currently used from.
+     * Returns questionbankentryid => contextid: the question's own, current owning question_categories
+     * context. This is the *only* legitimate context for a pluginfile.php reference embedded in that
+     * question's own content - it is fixed at save time and does not vary by which course/quiz is
+     * currently using the question.
      *
      * @param array $entryids
      * @return array
      */
-    protected static function get_valid_contexts_by_entry(array $entryids) {
+    protected static function get_owning_contexts_by_entry(array $entryids) {
         global $DB;
 
         $entryids = array_unique(array_filter($entryids));
@@ -362,42 +351,26 @@ class question_image_audit {
             return [];
         }
 
-        $valid = [];
-
         [$insql, $params] = $DB->get_in_or_equal($entryids);
 
-        // Owning category context.
         $sql = "SELECT qbe.id AS entryid, qc.contextid
                   FROM {question_bank_entries} qbe
                   JOIN {question_categories} qc ON qc.id = qbe.questioncategoryid
                  WHERE qbe.id $insql";
+
+        $owning = [];
         $rs = $DB->get_recordset_sql($sql, $params);
         foreach ($rs as $row) {
-            $valid[$row->entryid][] = (int) $row->contextid;
+            $owning[$row->entryid] = (int) $row->contextid;
         }
         $rs->close();
 
-        // Every context currently using this question (e.g. quiz course-module contexts).
-        $sql = "SELECT qbe.id AS entryid, qr.usingcontextid
-                  FROM {question_bank_entries} qbe
-                  JOIN {question_references} qr ON qr.questionbankentryid = qbe.id
-                 WHERE qbe.id $insql";
-        $rs = $DB->get_recordset_sql($sql, $params);
-        foreach ($rs as $row) {
-            $valid[$row->entryid][] = (int) $row->usingcontextid;
-        }
-        $rs->close();
-
-        foreach ($valid as $entryid => $contexts) {
-            $valid[$entryid] = array_values(array_unique($contexts));
-        }
-
-        return $valid;
+        return $owning;
     }
 
     /**
      * Returns questionbankentryid => [ {courseid, coursefullname, cmid, quizname}, ... ] describing every
-     * quiz currently using this question, for reporting purposes.
+     * quiz currently using this question, for reporting purposes and optional --courseid filtering.
      *
      * @param array $entryids
      * @return array
@@ -452,7 +425,7 @@ class question_image_audit {
      *
      * @param array $source
      * @param array $questionmap
-     * @return \Generator yields stdClass {questionid, table, field, text}
+     * @return \Generator yields stdClass {questionid, rowid, table, field, text}
      */
     protected static function scan_source(array $source, array $questionmap) {
         global $DB;
@@ -476,6 +449,7 @@ class question_image_audit {
                 }
                 $ref = new \stdClass();
                 $ref->questionid = $row->questionid;
+                $ref->rowid = $row->id;
                 $ref->table = $source['table'];
                 $ref->field = $field;
                 $ref->text = $row->$field;
@@ -497,7 +471,6 @@ class question_image_audit {
         $refs = [];
         foreach ($matches as $m) {
             $refs[] = [
-                'filetype'  => $m['filetype'],
                 'contextid' => $m['contextid'],
                 'component' => $m['component'],
                 'filearea'  => $m['filearea'],
@@ -545,12 +518,18 @@ class question_image_audit {
     }
 
     /**
-     * Produces a human readable label for a context id, tolerating deleted/orphaned contexts.
+     * Produces a human readable label for a context id, tolerating deleted/orphaned contexts, and
+     * explicitly identifying which course (if any) it belongs to - the key fact for answering "is this
+     * the same course a student may be enrolled in".
      *
-     * @param int $contextid
+     * @param int|null $contextid
      * @return string
      */
     public static function describe_context($contextid) {
+        if ($contextid === null) {
+            return '(question has no resolvable owning category - question_categories row missing?)';
+        }
+
         try {
             $context = \context::instance_by_id($contextid, IGNORE_MISSING);
         } catch (\Exception $e) {
@@ -563,24 +542,40 @@ class question_image_audit {
 
         try {
             $name = $context->get_context_name(false, true);
-            return "contextid={$contextid} ({$name})";
         } catch (\Exception $e) {
-            return "contextid={$contextid} (orphaned: {$context->contextlevel}/{$context->instanceid})";
+            return "contextid={$contextid} (orphaned: level {$context->contextlevel}, instance {$context->instanceid})";
+        }
+
+        switch ($context->contextlevel) {
+            case CONTEXT_COURSE:
+                return "contextid={$contextid} - Course-level question bank: {$name} (course id {$context->instanceid})";
+            case CONTEXT_MODULE:
+                global $DB;
+                $courseid = $DB->get_field('course_modules', 'course', ['id' => $context->instanceid]);
+                return "contextid={$contextid} - Module-level question bank: {$name}"
+                    . ($courseid ? " (in course id {$courseid})" : '');
+            case CONTEXT_COURSECAT:
+                return "contextid={$contextid} - Shared category-level question bank: {$name} "
+                    . "(not tied to one course - expected to be usable by any course drawing from it)";
+            case CONTEXT_SYSTEM:
+                return "contextid={$contextid} - Site-wide shared question bank (not tied to one course)";
+            default:
+                return "contextid={$contextid} ({$name})";
         }
     }
 
     /**
-     * @param \stdClass $question
-     * @param array     $questionusages
-     * @param array     $source
-     * @param \stdClass $ref
-     * @param array     $match
-     * @param int       $embeddedcontextid
-     * @param bool      $foreigncontext
-     * @param bool      $missing
-     * @param bool      $oversized
+     * @param \stdClass       $question
+     * @param array           $questionusages
+     * @param array           $source
+     * @param \stdClass       $ref
+     * @param array           $match
+     * @param int|null        $owningcontextid
+     * @param bool            $foreigncontext
+     * @param bool            $wrongitem
+     * @param bool            $missing
+     * @param bool            $oversized
      * @param \stdClass|false $filerecord
-     * @param bool      $isdraftfile Whether $match is a draftfile.php reference (always broken).
      * @return \stdClass
      */
     protected static function build_issue_row(
@@ -589,21 +584,21 @@ class question_image_audit {
         array $source,
         $ref,
         array $match,
-        $embeddedcontextid,
+        $owningcontextid,
         $foreigncontext,
+        $wrongitem,
         $missing,
         $oversized,
-        $filerecord,
-        $isdraftfile = false
+        $filerecord
     ) {
         global $CFG;
 
         $issuetypes = [];
-        if ($isdraftfile) {
-            $issuetypes[] = 'draftfile-reference';
-        }
         if ($foreigncontext) {
             $issuetypes[] = 'foreign-context';
+        }
+        if ($wrongitem) {
+            $issuetypes[] = 'wrong-item';
         }
         if ($missing) {
             $issuetypes[] = 'missing-file';
@@ -625,13 +620,12 @@ class question_image_audit {
         $row->qtype = $question->qtype;
         $row->sourcetable = $source['table'];
         $row->sourcefield = $ref->field;
-        $row->courses = implode('; ', array_unique($courselabels)) ?: '(not currently used in any quiz)';
+        $row->currentlyusedin = implode('; ', array_unique($courselabels)) ?: '(not currently used in any quiz)';
         $row->quizlinks = implode('; ', array_unique($quizlinks));
-        $row->embeddedcontext = $isdraftfile
-            ? self::describe_context($embeddedcontextid) . ' [owning user\'s private draft file area]'
-            : self::describe_context($embeddedcontextid);
-        $row->embeddedurl = "{$match['filetype']}.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
+        $row->fileshouldbein = self::describe_context($owningcontextid);
+        $row->embeddedurl = "pluginfile.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
             . "{$match['itemid']}/{$match['path']}";
+        $row->embeddedcontextlabel = self::describe_context((int) $match['contextid']);
         $row->issuetypes = implode(',', $issuetypes);
         $row->filesize = $filerecord ? $filerecord->filesize : null;
         $row->editurl = $CFG->wwwroot . '/question/bank/editquestion/question.php?id=' . $question->id;

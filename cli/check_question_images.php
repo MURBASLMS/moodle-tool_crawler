@@ -16,9 +16,14 @@
 
 /**
  * Audits quiz question content (question text, feedback, answers) for embedded pluginfile.php
- * references that a real enrolled student would not actually be able to load - most commonly because
- * the reference was hardcoded (pasted URL rather than file picker) pointing at a *different* course's
- * context, left over from a course rollover/import.
+ * references that a real enrolled student would not actually be able to load.
+ *
+ * A properly authored question image (inserted via the file picker) always ends up saved by Moodle with
+ * a pluginfile.php URL whose contextid/itemid are the question's *own* current values - fixed at save
+ * time, and the same regardless of which course/quiz is currently using the question. So the reliable
+ * check is: does the embedded reference still point at this exact question's own context/item, or does
+ * it point at something else entirely (typically a raw absolute URL pasted into the HTML source,
+ * referencing a different, unrelated - often "old unit" - question/course)?
  *
  * This is a pure database check - it does not make any HTTP requests - so it runs in seconds/minutes
  * even across a whole site, and is far more targeted than a generic link crawl for this specific
@@ -65,8 +70,9 @@ if ($unrecognized) {
 if ($options['help']) {
     echo <<<EOT
 Audits quiz question content for embedded pluginfile.php references a real
-student could not actually load (wrong/old context, missing file, or
-oversized file).
+student could not actually load: wrong/old context or item (typically a raw
+URL pasted from a different, unrelated question/course), a missing file, or
+an oversized file.
 
 Options:
  --courseid=N        Restrict to questions currently used by a quiz in this course (default: all courses).
@@ -76,6 +82,17 @@ Options:
  -v, --verbose        Print what was actually scanned (entries, questions, quizzes matched, fields
                        scanned, pluginfile references found) before the results.
  -h, --help           Print this help.
+
+Issue types reported:
+ foreign-context   The embedded pluginfile.php contextid does not match this question's own owning
+                    question-bank category context - i.e. it belongs to a different question/category
+                    entirely. Almost always unfixable by enrolment; the image needs to be re-inserted via
+                    the file picker.
+ wrong-item        The context matches, but the itemid does not match this question's (or this specific
+                    answer's/hint's) own id - it's referencing a sibling question/answer's file, not this
+                    one's.
+ missing-file      The referenced file no longer exists at all.
+ oversized         The referenced file is at/above --oversizebytes.
 
 Example:
  \$ php admin/tool/crawler/cli/check_question_images.php --courseid=1234 --verbose
@@ -105,7 +122,7 @@ if ($options['verbose']) {
         cli_writeln('    - ' . $quizname);
     }
     cli_writeln('  Question text/feedback/answer fields scanned: ' . $stats['fieldsscanned']);
-    cli_writeln('  pluginfile.php/draftfile.php references found in those fields: ' . $stats['pluginfilerefsfound']);
+    cli_writeln('  pluginfile.php references found in those fields: ' . $stats['pluginfilerefsfound']);
     cli_writeln('  Issues found: ' . $stats['issuesfound']);
     cli_writeln('  Duration: ' . $stats['durationseconds'] . 's');
     cli_writeln(str_repeat('=', 78));
@@ -120,7 +137,8 @@ if ($options['format'] === 'csv') {
     $out = fopen('php://stdout', 'w');
     fputcsv($out, [
         'questionid', 'questionname', 'qtype', 'sourcetable', 'sourcefield',
-        'courses', 'quizlinks', 'embeddedcontext', 'embeddedurl', 'issuetypes', 'filesize', 'editurl',
+        'currentlyusedin', 'quizlinks', 'fileshouldbein', 'embeddedurl', 'embeddedcontextlabel',
+        'issuetypes', 'filesize', 'editurl',
     ]);
     foreach ($issues as $row) {
         fputcsv($out, (array) $row);
@@ -130,14 +148,15 @@ if ($options['format'] === 'csv') {
     foreach ($issues as $row) {
         cli_writeln(str_repeat('-', 78));
         cli_writeln("Question #{$row->questionid} \"{$row->questionname}\" ({$row->qtype})");
-        cli_writeln("  Source:    {$row->sourcetable}.{$row->sourcefield}");
-        cli_writeln("  Used in:   {$row->courses}");
-        cli_writeln("  Quiz:      {$row->quizlinks}");
-        cli_writeln("  Embedded:  {$row->embeddedurl}");
-        cli_writeln("  Embedded context is: {$row->embeddedcontext}");
-        cli_writeln("  Issue(s):  {$row->issuetypes}"
+        cli_writeln("  Source:            {$row->sourcetable}.{$row->sourcefield}");
+        cli_writeln("  Currently used in: {$row->currentlyusedin}");
+        cli_writeln("  Quiz:              {$row->quizlinks}");
+        cli_writeln("  Embedded URL:      {$row->embeddedurl}");
+        cli_writeln("  ...which is:       {$row->embeddedcontextlabel}");
+        cli_writeln("  File SHOULD be in: {$row->fileshouldbein}");
+        cli_writeln("  Issue(s):          {$row->issuetypes}"
             . ($row->filesize !== null ? " (filesize={$row->filesize} bytes)" : ''));
-        cli_writeln("  Edit:      {$row->editurl}");
+        cli_writeln("  Edit:              {$row->editurl}");
     }
     cli_writeln(str_repeat('-', 78));
     cli_writeln(count($issues) . ' issue(s) found.');

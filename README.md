@@ -197,29 +197,37 @@ a full site HTTP crawl is slower and less targeted than necessary, and won't
 catch the most common real cause of this class of problem: a question was
 authored, or rolled over from a previous course offering, with a raw
 `pluginfile.php` URL pasted into the HTML source (instead of using the file
-picker). That bakes in the *old* course's contextid. Moodle's file serving
-checks the contextid literally present in the URL, so a student enrolled
-only in the new offering has no access to that old context and gets a
-permission failure - while staff who happen to also have access to (or
-broader capabilities across) the old course don't notice anything wrong when
+picker). A properly authored image (inserted via the file picker) is always
+saved by Moodle with a `pluginfile.php` URL whose contextid/itemid are the
+question's *own* current values - fixed at save time, and the same
+regardless of which course/quiz is currently using the question. So the
+reliable check is simply: does the embedded reference still point at this
+exact question's own context/item, or does it point at something else
+entirely (typically a raw absolute URL pasted from a different, unrelated -
+often "old unit" - question/course)? If it points elsewhere, no amount of
+enrolment in the current course will make Moodle serve it, because it isn't
+actually this question's file at all - while staff who happen to also have
+access to that other, unrelated context won't notice anything wrong when
 they do a quick check themselves.
+
+Note: while composing/editing, the editor's source-code view always shows
+`draftfile.php` URLs (a private, temporary per-editing-session area) - this
+is completely normal and not itself a problem; it's rewritten to a real
+`pluginfile.php` URL on save. This tool only ever reads the actual persisted
+database content, never the live editor state, so it isn't affected by this.
 
 `cli/check_question_images.php` audits this directly against the database
 (no HTTP requests at all, runs in seconds/minutes even across a whole site).
-For every embedded `pluginfile.php` **or `draftfile.php`** reference in a
-question's text/feedback/answers, it checks:
+For every embedded `pluginfile.php` reference in a question's
+text/feedback/answers, it checks:
 
-- **draftfile-reference**: the URL is a `draftfile.php` reference (a
-  private, temporary per-user editing area), most commonly left behind when
-  an image was pasted directly from Word/clipboard into the question editor
-  and the expected rewrite to a permanent `@@PLUGINFILE@@` token didn't
-  happen on save. Always broken for everyone except (sometimes) the original
-  author while still logged in, and eventually purged entirely by cron after
-  `$CFG->draftfilelifetime` (7 days by default).
-- **foreign-context**: the contextid embedded in a `pluginfile.php` URL
-  doesn't match the question's owning question-bank category context, nor
-  any context it is currently used from (e.g. a live quiz's course-module
-  context) - i.e. a student genuinely cannot resolve it.
+- **foreign-context**: the contextid embedded in the URL doesn't match this
+  question's own owning question-bank category context - i.e. it belongs to
+  a different question/category entirely. Almost always unfixable by
+  enrolment; the image needs to be re-inserted via the file picker.
+- **wrong-item**: the context matches, but the itemid doesn't match this
+  question's (or this specific answer's/hint's) own id - it's referencing a
+  sibling question's/answer's file, not this one's.
 - **missing-file**: the referenced file no longer exists at all.
 - **oversized**: the referenced file is at or above a configurable size
   threshold (default 1 MB).
