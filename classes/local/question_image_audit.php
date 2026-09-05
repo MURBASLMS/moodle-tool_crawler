@@ -722,7 +722,9 @@ class question_image_audit {
         $row->embeddedcontextlabel = self::describe_context((int) $match['contextid']);
         $row->issuetypes = implode(',', $issuetypes);
         $row->filesize = $filerecord ? $filerecord->filesize : null;
-        $row->editurl = $CFG->wwwroot . '/question/bank/editquestion/question.php?id=' . $question->id;
+        $firstusage = reset($questionusages);
+        $row->editurl = $CFG->wwwroot . '/question/bank/editquestion/question.php?id=' . $question->id
+            . ($firstusage ? '&courseid=' . $firstusage->courseid : '');
 
         return $row;
     }
