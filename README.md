@@ -8,6 +8,7 @@
 * [Installation](#installation)
 * [Configuration](#configuration)
 * [Testing](#testing)
+* [Auditing quiz question images/files](#auditing-quiz-question-imagesfiles-without-a-full-http-crawl)
 * [Debugging](#debugging)
 * [Reports](#reports)
 * [Support](#support)
@@ -187,6 +188,46 @@ cron cycles, you can watch it's progress in
 and
 
 /admin/tool/crawler/report.php?report=recent
+
+# Auditing quiz question images/files (without a full HTTP crawl)
+
+If all you actually care about is whether images/files embedded in quiz
+questions (question text, feedback, answers) will load for real *students*,
+a full site HTTP crawl is slower and less targeted than necessary, and won't
+catch the most common real cause of this class of problem: a question was
+authored, or rolled over from a previous course offering, with a raw
+`pluginfile.php` URL pasted into the HTML source (instead of using the file
+picker). That bakes in the *old* course's contextid. Moodle's file serving
+checks the contextid literally present in the URL, so a student enrolled
+only in the new offering has no access to that old context and gets a
+permission failure - while staff who happen to also have access to (or
+broader capabilities across) the old course don't notice anything wrong when
+they do a quick check themselves.
+
+`cli/check_question_images.php` audits this directly against the database
+(no HTTP requests at all, runs in seconds/minutes even across a whole site).
+For every embedded `pluginfile.php` reference in a question's text/feedback/
+answers, it checks:
+
+- **foreign-context**: the contextid embedded in the URL doesn't match the
+  question's owning question-bank category context, nor any context it is
+  currently used from (e.g. a live quiz's course-module context) - i.e. a
+  student genuinely cannot resolve it.
+- **missing-file**: the referenced file no longer exists at all.
+- **oversized**: the referenced file is at or above a configurable size
+  threshold (default 1 MB).
+
+```
+php admin/tool/crawler/cli/check_question_images.php
+php admin/tool/crawler/cli/check_question_images.php --courseid=1234
+php admin/tool/crawler/cli/check_question_images.php --oversizebytes=2097152 --format=csv
+```
+
+This deliberately covers the highest-traffic core question types first
+(multichoice, truefalse, shortanswer, essay, match, numerical - see
+`question_image_audit::get_content_sources()`), rather than being exhaustive
+for every third-party question type out of the box; add more table/field
+entries there if you use other question types and want them covered too.
 
 # Debugging
 
