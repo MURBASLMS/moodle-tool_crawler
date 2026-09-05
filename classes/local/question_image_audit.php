@@ -127,10 +127,19 @@ class question_image_audit {
         $oversizebytes = $options['oversizebytes'] ?? self::DEFAULT_OVERSIZE_BYTES;
         $limit         = $options['limit'] ?? 0;
 
+        // If restricted to a single course, narrow every subsequent query down to just the question
+        // bank entries actually used by a quiz in that course, rather than scanning the whole site's
+        // question bank and filtering afterwards. Cheap and safe to run against a single course in
+        // production.
+        $entryids = $courseid ? self::get_entryids_for_course($courseid) : null;
+        if ($courseid && empty($entryids)) {
+            return [];
+        }
+
         // Map question.id => question_bank_entries.id, and question.id => qtype/name/course context info,
         // restricted to the latest version of each entry (we don't want to double report every historical
         // version of a question, only what is/was actually deliverable).
-        $questionmap = self::get_question_map();
+        $questionmap = self::get_question_map($entryids);
 
         if (empty($questionmap)) {
             return [];
@@ -198,13 +207,43 @@ class question_image_audit {
     }
 
     /**
+     * Returns the question_bank_entries.id list actually used by a quiz in the given course.
+     *
+     * @param int $courseid
+     * @return array
+     */
+    protected static function get_entryids_for_course($courseid) {
+        global $DB;
+
+        $sql = "SELECT DISTINCT qr.questionbankentryid
+                  FROM {question_references} qr
+                  JOIN {context} ctx ON ctx.id = qr.usingcontextid AND ctx.contextlevel = " . CONTEXT_MODULE . "
+                  JOIN {course_modules} cm ON cm.id = ctx.instanceid
+                  JOIN {modules} m ON m.id = cm.module AND m.name = 'quiz'
+                 WHERE cm.course = :courseid";
+
+        return $DB->get_fieldset_sql($sql, ['courseid' => $courseid]);
+    }
+
+    /**
      * Returns questionid => {questionbankentryid, name, qtype} for the latest version of every
      * non-deleted question bank entry.
      *
+     * @param array|null $entryids If given, restrict to these question_bank_entries.id only.
      * @return array
      */
-    protected static function get_question_map() {
+    protected static function get_question_map(?array $entryids = null) {
         global $DB;
+
+        $params = [];
+        $entryfilter = '';
+        if ($entryids !== null) {
+            if (empty($entryids)) {
+                return [];
+            }
+            [$insql, $params] = $DB->get_in_or_equal($entryids);
+            $entryfilter = "WHERE qv.questionbankentryid $insql";
+        }
 
         // Use the highest version number per entry as "the current one".
         $sql = "SELECT q.id, q.name, q.qtype, qv.questionbankentryid
@@ -215,10 +254,11 @@ class question_image_audit {
                           FROM {question_versions}
                       GROUP BY questionbankentryid
                        ) latest ON latest.questionbankentryid = qv.questionbankentryid
-                                AND latest.maxversion = qv.version";
+                                AND latest.maxversion = qv.version
+                  $entryfilter";
 
         $questionmap = [];
-        $rs = $DB->get_recordset_sql($sql);
+        $rs = $DB->get_recordset_sql($sql, $params);
         foreach ($rs as $row) {
             $questionmap[$row->id] = $row;
         }
