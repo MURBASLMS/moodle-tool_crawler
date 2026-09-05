@@ -114,9 +114,8 @@ $issues = question_image_audit::run([
 if ($options['verbose']) {
     cli_writeln(str_repeat('=', 78));
     cli_writeln('Scan summary:');
-    cli_writeln('  Question bank entries in scope: '
-        . ($stats['entriesfound'] === null ? 'all (site-wide run)' : $stats['entriesfound']));
-    cli_writeln('  Questions scanned (latest version of each): ' . $stats['questionsscanned']);
+    cli_writeln('  Quiz-slot usages in scope: ' . $stats['usagesfound']);
+    cli_writeln('  Questions scanned (resolved actual version shown to students): ' . $stats['questionsscanned']);
     cli_writeln('  Quizzes matched: ' . $stats['quizzesmatched']);
     foreach ($stats['quiznames'] as $quizname) {
         cli_writeln('    - ' . $quizname);

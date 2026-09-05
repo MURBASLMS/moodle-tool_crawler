@@ -232,6 +232,18 @@ text/feedback/answers, it checks:
 - **oversized**: the referenced file is at or above a configurable size
   threshold (default 1 MB).
 
+Only questions that are actually referenced by a live quiz (via
+`question_references`) are scanned - an unused question sitting in the
+question bank can't affect any student, so is intentionally out of scope.
+Importantly, a quiz slot can *pin a specific version* of a question rather
+than always tracking the latest edit (e.g. deliberately, for exam
+stability) - this tool resolves and scans the actual pinned/shown version
+per usage, not just "the latest version of every entry", so it won't miss
+(or misreport against) content that's since been edited but isn't what
+students are actually shown. Randomly-drawn "random from category" slots
+(`question_set_references`) are not yet resolved to their pool of possible
+questions and are not covered.
+
 ```
 php admin/tool/crawler/cli/check_question_images.php
 php admin/tool/crawler/cli/check_question_images.php --courseid=1234

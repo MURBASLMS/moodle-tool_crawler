@@ -24,12 +24,11 @@ defined('MOODLE_INTERNAL') || die();
  *
  * Unlike the generic tool_crawler HTTP crawl, this works entirely at the database level. A properly
  * authored question image (inserted via the file picker) is always saved by Moodle with a pluginfile.php
- * URL whose contextid/component/filearea/itemid are the question's *own*, current values - that is, the
- * question's owning question_categories.contextid, and (depending on field) either the question's own id
- * or the specific answer/hint row's own id. This is fixed at save time by file_save_draft_area_files()
- * and does not depend on, or vary by, which course/quiz is currently using the question - a question
- * pulled from a shared/faculty-level question bank is expected to keep referencing that bank's own
- * context regardless of which course's quiz uses it.
+ * URL whose contextid/itemid are the question's *own*, current values - that is, the question's owning
+ * question_categories.contextid, and (depending on field) either the question's own id or the specific
+ * answer/hint row's own id. This is fixed at save time and does not depend on, or vary by, which
+ * course/quiz is currently using the question - a question pulled from a shared/faculty-level question
+ * bank is expected to keep referencing that bank's own context regardless of which course's quiz uses it.
  *
  * So the one reliable question to ask of every embedded pluginfile.php reference is: does it still point
  * at *this exact question's own* current context/item, or does it point at something else entirely
@@ -38,6 +37,19 @@ defined('MOODLE_INTERNAL') || die();
  * points at something else, no amount of enrolment in the current course will make Moodle serve it,
  * because it isn't actually this question's file at all - while staff who happen to also have access to
  * that other, unrelated context won't notice anything wrong when they view it themselves.
+ *
+ * Crucially, "the question" a quiz slot uses is resolved via {question_references}, which can *pin a
+ * specific version* of a question rather than always tracking the latest edit
+ * ({question_references}.version is not null). A quiz set up for exam-stability reasons may well be
+ * showing students an older version than whatever is currently the latest in the question bank, so this
+ * scans the *actual pinned/resolved version per usage*, not just "the latest version of every entry" -
+ * otherwise a since-edited (or since-fixed, or since-broken) later version could be scanned instead of
+ * what students actually see.
+ *
+ * Only questions that are actually referenced by a live quiz (via question_references) are scanned - a
+ * question sitting unused in the question bank can't affect any student, so is out of scope by design.
+ * (Randomly-drawn questions via question_set_references - "random from category" slots - are not yet
+ * resolved to their possible pool of underlying questions and are not covered.)
  *
  * It also flags any embedded file that no longer exists at all (genuinely broken for everyone), and
  * any embedded file over a configurable size threshold (oversized images).
@@ -52,10 +64,8 @@ class question_image_audit {
     const DEFAULT_OVERSIZE_BYTES = 1048576;
 
     /**
-     * Content sources to scan for embedded pluginfile.php references.
-     *
-     * Each entry describes a table/fields combination to scan, plus 'itemidbasis' - what the itemid in a
-     * *legitimate* pluginfile.php reference for that field should equal:
+     * Content sources to scan for embedded pluginfile.php references, plus 'itemidbasis' - what the
+     * itemid in a *legitimate* pluginfile.php reference for that field should equal:
      *  - 'question': the question's own id (used for the question's own text/feedback areas).
      *  - 'row':      the specific source row's own id (used for per-answer/per-hint areas).
      *  - null:       not confidently known for this field, so the itemid isn't strictly checked (only
@@ -70,35 +80,30 @@ class question_image_audit {
      */
     protected static function get_content_sources() {
         return [
-            // Core question fields.
             [
                 'table' => 'question',
                 'idfield' => 'id',
                 'fields' => ['questiontext', 'generalfeedback'],
                 'itemidbasis' => 'question',
             ],
-            // Multi-try hints (used by interactive/adaptive behaviours across most qtypes).
             [
                 'table' => 'question_hints',
                 'idfield' => 'questionid',
                 'fields' => ['hint'],
                 'itemidbasis' => 'row',
             ],
-            // Answers and per-answer feedback (multichoice, truefalse, shortanswer, numerical, ...).
             [
                 'table' => 'question_answers',
                 'idfield' => 'question',
                 'fields' => ['answer', 'feedback'],
                 'itemidbasis' => 'row',
             ],
-            // Multichoice whole-question feedback.
             [
                 'table' => 'qtype_multichoice_options',
                 'idfield' => 'questionid',
                 'fields' => ['correctfeedback', 'partiallycorrectfeedback', 'incorrectfeedback'],
                 'itemidbasis' => 'question',
             ],
-            // Match whole-question feedback and subquestion text.
             [
                 'table' => 'qtype_match_options',
                 'idfield' => 'questionid',
@@ -111,7 +116,6 @@ class question_image_audit {
                 'fields' => ['questiontext'],
                 'itemidbasis' => null,
             ],
-            // Essay grader info / response template (visible to graders/students respectively).
             [
                 'table' => 'qtype_essay_options',
                 'idfield' => 'questionid',
@@ -132,12 +136,12 @@ class question_image_audit {
      * Runs the audit.
      *
      * @param array      $options {
-     *     @type int      $courseid       Restrict to questions currently used within this course (0 = all courses).
+     *     @type int      $courseid       Restrict to a quiz in this course (0 = every quiz on the site).
      *     @type int      $oversizebytes  Flag files at or above this size. Defaults to self::DEFAULT_OVERSIZE_BYTES.
      *     @type int      $limit          Maximum number of issue rows to return (0 = unlimited).
      * }
      * @param array|null $stats Optional, passed by reference. Populated with scan stats for --verbose
-     *                          reporting: entriesfound, questionsscanned, quizzesmatched, quiznames,
+     *                          reporting: usagesfound, questionsscanned, quizzesmatched, quiznames,
      *                          fieldsscanned, pluginfilerefsfound, issuesfound, durationseconds.
      * @return array Array of stdClass issue rows, see build_issue_row().
      */
@@ -145,7 +149,7 @@ class question_image_audit {
         $starttime = microtime(true);
 
         $stats = [
-            'entriesfound'        => 0,
+            'usagesfound'         => 0,
             'questionsscanned'    => 0,
             'quizzesmatched'      => 0,
             'quiznames'           => [],
@@ -159,44 +163,63 @@ class question_image_audit {
         $oversizebytes = $options['oversizebytes'] ?? self::DEFAULT_OVERSIZE_BYTES;
         $limit         = $options['limit'] ?? 0;
 
-        // If restricted to a single course, narrow every subsequent query down to just the question
-        // bank entries actually used by a quiz in that course, rather than scanning the whole site's
-        // question bank and filtering afterwards. Cheap and safe to run against a single course in
-        // production.
-        $entryids = $courseid ? self::get_entryids_for_course($courseid) : null;
-        if ($courseid && empty($entryids)) {
+        // Every quiz-slot usage in scope (a single course's quizzes, or every quiz on the site), with
+        // enough information to resolve exactly which question *version* is actually shown to students.
+        $rawusages = self::get_raw_usages($courseid);
+        $stats['usagesfound'] = count($rawusages);
+        if (empty($rawusages)) {
             $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
             return [];
         }
-        $stats['entriesfound'] = $entryids !== null ? count($entryids) : null; // null = "all" (site-wide run).
 
-        // Map question.id => question_bank_entries.id, and question.id => qtype/name, restricted to the
-        // latest version of each entry (we don't want to double report every historical version of a
-        // question, only what is/was actually deliverable).
-        $questionmap = self::get_question_map($entryids);
+        // Resolve each usage's actual question id: the pinned version if question_references.version is
+        // set, otherwise the latest version - never just "whatever the latest version happens to be",
+        // regardless of what's actually pinned.
+        $entryids = array_unique(array_column($rawusages, 'questionbankentryid'));
+        $versionsbyentry = self::get_versions_by_entry($entryids);
+
+        $usagesbyquestionid = [];   // questionid => [ {courseid, coursefullname, cmid, quizname}, ... ].
+        $entrybyquestionid = [];    // questionid => questionbankentryid.
+        $questionids = [];
+        foreach ($rawusages as $usage) {
+            $versions = $versionsbyentry[$usage->questionbankentryid] ?? [];
+            if (empty($versions)) {
+                continue; // Entry has no versions at all (shouldn't normally happen) - skip.
+            }
+            if (!empty($usage->pinnedversion) && isset($versions[(int) $usage->pinnedversion])) {
+                $questionid = $versions[(int) $usage->pinnedversion];
+            } else {
+                // version = null means "always use the latest ready version"; also falls back here if a
+                // pinned version number no longer exists (e.g. deleted).
+                $questionid = $versions[max(array_keys($versions))];
+            }
+
+            $questionids[$questionid] = true;
+            $entrybyquestionid[$questionid] = $usage->questionbankentryid;
+            $usagesbyquestionid[$questionid][] = $usage;
+        }
+        $questionids = array_keys($questionids);
+
+        if (empty($questionids)) {
+            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
+            return [];
+        }
+
+        // Now fetch the actual question rows (name/qtype) for exactly those resolved question ids.
+        $questionmap = self::get_questions_by_id($questionids);
+        foreach ($questionmap as $qid => $q) {
+            $q->questionbankentryid = $entrybyquestionid[$qid];
+        }
         $stats['questionsscanned'] = count($questionmap);
 
-        if (empty($questionmap)) {
-            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
-            return [];
-        }
-
-        // For every question_bank_entries.id: the question's own, current owning context - the *only*
-        // legitimate context for a pluginfile.php reference embedded in that question's own content,
-        // regardless of which course/quiz is currently using the question.
-        $owningcontexts = self::get_owning_contexts_by_entry(array_column($questionmap, 'questionbankentryid'));
-
-        // Where is each question_bank_entries.id actually used right now? Purely for reporting (so a
-        // human can see at a glance whether the owning context's course matches) + optional --courseid
-        // filtering.
-        $usages = self::get_usages_by_entry(array_column($questionmap, 'questionbankentryid'));
+        // The question's own, current owning context - the *only* legitimate context for a pluginfile.php
+        // reference embedded in that question's own content, regardless of which course/quiz uses it.
+        $owningcontexts = self::get_owning_contexts_by_entry(array_values($entrybyquestionid));
 
         $matchedquizzes = [];
-        foreach ($usages as $qbeusages) {
-            foreach ($qbeusages as $usage) {
-                if (!$courseid || (int) $usage->courseid === (int) $courseid) {
-                    $matchedquizzes[$usage->cmid] = $usage->quizname . ' (course id ' . $usage->courseid . ')';
-                }
+        foreach ($usagesbyquestionid as $qusages) {
+            foreach ($qusages as $usage) {
+                $matchedquizzes[$usage->cmid] = $usage->quizname . ' (course id ' . $usage->courseid . ')';
             }
         }
         $stats['quizzesmatched'] = count($matchedquizzes);
@@ -215,10 +238,7 @@ class question_image_audit {
                 $q   = $questionmap[$questionid];
                 $qbe = $q->questionbankentryid;
 
-                $questionusages = $usages[$qbe] ?? [];
-                if ($courseid && !self::usages_include_course($questionusages, $courseid)) {
-                    continue;
-                }
+                $questionusages = $usagesbyquestionid[$questionid] ?? [];
 
                 $owningcontextid = $owningcontexts[$qbe] ?? null;
                 $expecteditemid = null;
@@ -274,55 +294,80 @@ class question_image_audit {
     }
 
     /**
-     * Returns the question_bank_entries.id list actually used by a quiz in the given course.
+     * Returns every quiz-slot usage in scope: question_references rows joined to the quiz/course-module/
+     * course actually using them, optionally restricted to one course.
      *
-     * @param int $courseid
-     * @return array
+     * @param int $courseid 0 = every quiz on the site.
+     * @return array Array of stdClass {refid, questionbankentryid, pinnedversion, usingcontextid, cmid,
+     *               courseid, coursefullname, quizname}.
      */
-    protected static function get_entryids_for_course($courseid) {
+    protected static function get_raw_usages($courseid) {
         global $DB;
 
-        $sql = "SELECT DISTINCT qr.questionbankentryid
+        $params = [];
+        $coursefilter = '';
+        if ($courseid) {
+            $coursefilter = 'AND cm.course = :courseid';
+            $params['courseid'] = $courseid;
+        }
+
+        $sql = "SELECT qr.id AS refid, qr.questionbankentryid, qr.version AS pinnedversion, qr.usingcontextid,
+                       cm.id AS cmid, c.id AS courseid, c.fullname AS coursefullname, quiz.name AS quizname
                   FROM {question_references} qr
                   JOIN {context} ctx ON ctx.id = qr.usingcontextid AND ctx.contextlevel = " . CONTEXT_MODULE . "
                   JOIN {course_modules} cm ON cm.id = ctx.instanceid
                   JOIN {modules} m ON m.id = cm.module AND m.name = 'quiz'
-                 WHERE cm.course = :courseid";
+                  JOIN {quiz} quiz ON quiz.id = cm.instance
+                  JOIN {course} c ON c.id = cm.course
+                 WHERE 1 = 1 $coursefilter";
 
-        return $DB->get_fieldset_sql($sql, ['courseid' => $courseid]);
+        return $DB->get_records_sql($sql, $params);
     }
 
     /**
-     * Returns questionid => {questionbankentryid, name, qtype} for the latest version of every
-     * non-deleted question bank entry.
+     * Returns questionbankentryid => [version => questionid, ...] for every version of every given entry.
      *
-     * @param array|null $entryids If given, restrict to these question_bank_entries.id only.
+     * @param array $entryids
      * @return array
      */
-    protected static function get_question_map(?array $entryids = null) {
+    protected static function get_versions_by_entry(array $entryids) {
         global $DB;
 
-        $params = [];
-        $entryfilter = '';
-        if ($entryids !== null) {
-            if (empty($entryids)) {
-                return [];
-            }
-            [$insql, $params] = $DB->get_in_or_equal($entryids);
-            $entryfilter = "WHERE qv.questionbankentryid $insql";
+        $entryids = array_unique(array_filter($entryids));
+        if (empty($entryids)) {
+            return [];
         }
 
-        // Use the highest version number per entry as "the current one".
-        $sql = "SELECT q.id, q.name, q.qtype, qv.questionbankentryid
-                  FROM {question} q
-                  JOIN {question_versions} qv ON qv.questionid = q.id
-                  JOIN (
-                        SELECT questionbankentryid, MAX(version) AS maxversion
-                          FROM {question_versions}
-                      GROUP BY questionbankentryid
-                       ) latest ON latest.questionbankentryid = qv.questionbankentryid
-                                AND latest.maxversion = qv.version
-                  $entryfilter";
+        [$insql, $params] = $DB->get_in_or_equal($entryids);
+        $sql = "SELECT qv.questionbankentryid, qv.version, qv.questionid
+                  FROM {question_versions} qv
+                 WHERE qv.questionbankentryid $insql";
+
+        $byentry = [];
+        $rs = $DB->get_recordset_sql($sql, $params);
+        foreach ($rs as $row) {
+            $byentry[$row->questionbankentryid][(int) $row->version] = (int) $row->questionid;
+        }
+        $rs->close();
+
+        return $byentry;
+    }
+
+    /**
+     * Returns questionid => {id, name, qtype} for exactly the given question ids.
+     *
+     * @param array $questionids
+     * @return array
+     */
+    protected static function get_questions_by_id(array $questionids) {
+        global $DB;
+
+        if (empty($questionids)) {
+            return [];
+        }
+
+        [$insql, $params] = $DB->get_in_or_equal($questionids);
+        $sql = "SELECT id, name, qtype FROM {question} WHERE id $insql";
 
         $questionmap = [];
         $rs = $DB->get_recordset_sql($sql, $params);
@@ -366,57 +411,6 @@ class question_image_audit {
         $rs->close();
 
         return $owning;
-    }
-
-    /**
-     * Returns questionbankentryid => [ {courseid, coursefullname, cmid, quizname}, ... ] describing every
-     * quiz currently using this question, for reporting purposes and optional --courseid filtering.
-     *
-     * @param array $entryids
-     * @return array
-     */
-    protected static function get_usages_by_entry(array $entryids) {
-        global $DB;
-
-        $entryids = array_unique(array_filter($entryids));
-        if (empty($entryids)) {
-            return [];
-        }
-
-        [$insql, $params] = $DB->get_in_or_equal($entryids);
-
-        $sql = "SELECT qr.id AS refid, qr.questionbankentryid, qr.usingcontextid,
-                       cm.id AS cmid, c.id AS courseid, c.fullname AS coursefullname, q.name AS quizname
-                  FROM {question_references} qr
-                  JOIN {context} ctx ON ctx.id = qr.usingcontextid AND ctx.contextlevel = " . CONTEXT_MODULE . "
-                  JOIN {course_modules} cm ON cm.id = ctx.instanceid
-                  JOIN {modules} m ON m.id = cm.module AND m.name = 'quiz'
-                  JOIN {quiz} q ON q.id = cm.instance
-                  JOIN {course} c ON c.id = cm.course
-                 WHERE qr.questionbankentryid $insql";
-
-        $usages = [];
-        $rs = $DB->get_recordset_sql($sql, $params);
-        foreach ($rs as $row) {
-            $usages[$row->questionbankentryid][] = $row;
-        }
-        $rs->close();
-
-        return $usages;
-    }
-
-    /**
-     * @param array $questionusages
-     * @param int   $courseid
-     * @return bool
-     */
-    protected static function usages_include_course(array $questionusages, $courseid) {
-        foreach ($questionusages as $usage) {
-            if ((int) $usage->courseid === (int) $courseid) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
