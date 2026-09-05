@@ -210,16 +210,29 @@ actually this question's file at all - while staff who happen to also have
 access to that other, unrelated context won't notice anything wrong when
 they do a quick check themselves.
 
-Note: while composing/editing, the editor's source-code view always shows
-`draftfile.php` URLs (a private, temporary per-editing-session area) - this
-is completely normal and not itself a problem; it's rewritten to a real
-`pluginfile.php` URL on save. This tool only ever reads the actual persisted
-database content, never the live editor state, so it isn't affected by this.
+Note: while composing/editing, the editor's source-code view shows
+`draftfile.php` URLs (a private, temporary per-editing-session area), and
+viewing a question within a live quiz attempt shows a different, dynamically
+generated `pluginfile.php/.../usageid/slot/itemid/...` form - neither of
+which reflect what's actually stored in the database. Properly authored
+content (inserted via the file picker) is normally stored as an
+`@@PLUGINFILE@@/filename` **placeholder token**, not a concrete URL at all -
+Moodle resolves it to whichever of the above forms is appropriate at render
+time. This tool only ever reads the actual persisted database content, so it
+checks both forms it might actually find there:
+
+- A literal, concrete `pluginfile.php/<contextid>/.../<itemid>/...` URL -
+  which only ends up stored if someone bypassed the file picker (e.g. pasted
+  a raw URL into the HTML source). This is the rarer, but more seriously
+  broken, case: the checks below (foreign-context/wrong-item) only apply to
+  this form, since a token can't be "foreign" by construction.
+- An `@@PLUGINFILE@@/filename` token - the normal/expected form. This can
+  still reference a filename that's missing or oversized, even though it can
+  never be pointing at the wrong course/context.
 
 `cli/check_question_images.php` audits this directly against the database
 (no HTTP requests at all, runs in seconds/minutes even across a whole site).
-For every embedded `pluginfile.php` reference in a question's
-text/feedback/answers, it checks:
+It checks:
 
 - **foreign-context**: the contextid embedded in the URL doesn't match this
   question's own owning question-bank category context - i.e. it belongs to

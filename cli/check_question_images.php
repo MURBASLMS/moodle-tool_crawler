@@ -121,7 +121,8 @@ if ($options['verbose']) {
         cli_writeln('    - ' . $quizname);
     }
     cli_writeln('  Question text/feedback/answer fields scanned: ' . $stats['fieldsscanned']);
-    cli_writeln('  pluginfile.php references found in those fields: ' . $stats['pluginfilerefsfound']);
+    cli_writeln('  Concrete pluginfile.php references found: ' . $stats['pluginfilerefsfound']);
+    cli_writeln('  @@PLUGINFILE@@ token references found: ' . $stats['tokenrefsfound']);
     cli_writeln('  Issues found: ' . $stats['issuesfound']);
     cli_writeln('  Duration: ' . $stats['durationseconds'] . 's');
     cli_writeln(str_repeat('=', 78));

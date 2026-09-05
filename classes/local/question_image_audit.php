@@ -71,6 +71,13 @@ class question_image_audit {
      *  - null:       not confidently known for this field, so the itemid isn't strictly checked (only
      *                the context is), to avoid false positives.
      *
+     * 'fields' maps each database column name to its corresponding Moodle file area name - these are not
+     * always the same (e.g. question_answers.feedback is stored under the 'answerfeedback' file area, not
+     * 'feedback'). This mapping is what lets us resolve @@PLUGINFILE@@ tokens (which don't carry a
+     * filearea themselves) back to a concrete, checkable context/component/filearea/itemid. A null
+     * filearea means it isn't confidently known for that field, so @@PLUGINFILE@@ tokens in it are not
+     * checked (only literal, concrete pluginfile.php URLs are, same as when itemidbasis is null).
+     *
      * This deliberately covers the highest traffic question types first (multichoice, truefalse,
      * shortanswer, essay, match, numerical, all of which use the core `question` and `question_answers`
      * tables) rather than attempting to be exhaustive for every third-party question type out of the box.
@@ -83,43 +90,51 @@ class question_image_audit {
             [
                 'table' => 'question',
                 'idfield' => 'id',
-                'fields' => ['questiontext', 'generalfeedback'],
+                'fields' => ['questiontext' => 'questiontext', 'generalfeedback' => 'generalfeedback'],
                 'itemidbasis' => 'question',
             ],
             [
                 'table' => 'question_hints',
                 'idfield' => 'questionid',
-                'fields' => ['hint'],
+                'fields' => ['hint' => 'hint'],
                 'itemidbasis' => 'row',
             ],
             [
                 'table' => 'question_answers',
                 'idfield' => 'question',
-                'fields' => ['answer', 'feedback'],
+                'fields' => ['answer' => 'answer', 'feedback' => 'answerfeedback'],
                 'itemidbasis' => 'row',
             ],
             [
                 'table' => 'qtype_multichoice_options',
                 'idfield' => 'questionid',
-                'fields' => ['correctfeedback', 'partiallycorrectfeedback', 'incorrectfeedback'],
+                'fields' => [
+                    'correctfeedback' => 'correctfeedback',
+                    'partiallycorrectfeedback' => 'partiallycorrectfeedback',
+                    'incorrectfeedback' => 'incorrectfeedback',
+                ],
                 'itemidbasis' => 'question',
             ],
             [
                 'table' => 'qtype_match_options',
                 'idfield' => 'questionid',
-                'fields' => ['correctfeedback', 'partiallycorrectfeedback', 'incorrectfeedback'],
+                'fields' => [
+                    'correctfeedback' => 'correctfeedback',
+                    'partiallycorrectfeedback' => 'partiallycorrectfeedback',
+                    'incorrectfeedback' => 'incorrectfeedback',
+                ],
                 'itemidbasis' => 'question',
             ],
             [
                 'table' => 'qtype_match_subquestions',
                 'idfield' => 'questionid',
-                'fields' => ['questiontext'],
+                'fields' => ['questiontext' => null],
                 'itemidbasis' => null,
             ],
             [
                 'table' => 'qtype_essay_options',
                 'idfield' => 'questionid',
-                'fields' => ['graderinfo', 'responsetemplate'],
+                'fields' => ['graderinfo' => null, 'responsetemplate' => null],
                 'itemidbasis' => null,
             ],
         ];
@@ -131,6 +146,16 @@ class question_image_audit {
     const PLUGINFILE_REGEX =
         '#pluginfile\.php/(?<contextid>\d+)/(?<component>[a-zA-Z0-9_]+)/(?<filearea>[a-zA-Z0-9_]+)/'
         . '(?<itemid>\d+)/(?<path>[^"\'\)\s<>]*)#';
+
+    /**
+     * Matches Moodle's @@PLUGINFILE@@/<path> placeholder token - the normal, properly-authored way an
+     * image/file inserted via the file picker is actually stored. Unlike a concrete pluginfile.php URL,
+     * this carries no context/component/filearea/itemid of its own - those are always implicitly "this
+     * exact field, on this exact question/row", resolved dynamically at render time. So a token can never
+     * be "foreign-context" or "wrong-item" by construction - but it can still point at a filename that no
+     * longer exists, or that's oversized.
+     */
+    const TOKEN_REGEX = '#@@PLUGINFILE@@/(?<path>[^"\'\)\s<>]*)#';
 
     /**
      * Runs the audit.
@@ -155,6 +180,7 @@ class question_image_audit {
             'quiznames'           => [],
             'fieldsscanned'       => 0,
             'pluginfilerefsfound' => 0,
+            'tokenrefsfound'      => 0,
             'issuesfound'         => 0,
             'durationseconds'     => 0,
         ];
@@ -284,6 +310,54 @@ class question_image_audit {
                     if ($limit && count($issues) >= $limit) {
                         $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
                         return $issues;
+                    }
+                }
+
+                // @@PLUGINFILE@@ tokens - the normal, properly-authored form. These carry no
+                // context/component/filearea/itemid of their own (always implicitly "this exact field on
+                // this exact question/row"), so they can never be foreign-context/wrong-item by
+                // construction - but the filename they point at can still be missing or oversized. Only
+                // checked where we confidently know the expected context/itemid/filearea for this field.
+                if ($owningcontextid !== null && $expecteditemid !== null && $ref->filearea !== null) {
+                    foreach (self::find_token_refs($ref->text) as $tokenmatch) {
+                        $stats['tokenrefsfound']++;
+
+                        $match = [
+                            'contextid' => $owningcontextid,
+                            'component' => 'question',
+                            'filearea'  => $ref->filearea,
+                            'itemid'    => $expecteditemid,
+                            'path'      => $tokenmatch['path'],
+                        ];
+
+                        $filerecord = self::find_file_record($match);
+                        $missing    = ($filerecord === false);
+                        $oversized  = ($filerecord && $filerecord->filesize >= $oversizebytes);
+
+                        if (!$missing && !$oversized) {
+                            continue; // Token resolves fine, nothing wrong.
+                        }
+
+                        $issues[] = self::build_issue_row(
+                            $q,
+                            $questionusages,
+                            $source,
+                            $ref,
+                            $match,
+                            $owningcontextid,
+                            false,
+                            false,
+                            $missing,
+                            $oversized,
+                            $filerecord,
+                            true
+                        );
+                        $stats['issuesfound'] = count($issues);
+
+                        if ($limit && count($issues) >= $limit) {
+                            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
+                            return $issues;
+                        }
                     }
                 }
             }
@@ -430,14 +504,15 @@ class question_image_audit {
         }
 
         [$insql, $params] = $DB->get_in_or_equal($questionids);
-        $fieldlist = implode(', ', $source['fields']);
+        $dbfields = array_keys($source['fields']);
+        $fieldlist = implode(', ', $dbfields);
         $sql = "SELECT id, {$source['idfield']} AS questionid, $fieldlist
                   FROM {{$source['table']}}
                  WHERE {$source['idfield']} $insql";
 
         $rs = $DB->get_recordset_sql($sql, $params);
         foreach ($rs as $row) {
-            foreach ($source['fields'] as $field) {
+            foreach ($dbfields as $field) {
                 if (empty($row->$field)) {
                     continue;
                 }
@@ -446,6 +521,7 @@ class question_image_audit {
                 $ref->rowid = $row->id;
                 $ref->table = $source['table'];
                 $ref->field = $field;
+                $ref->filearea = $source['fields'][$field];
                 $ref->text = $row->$field;
                 yield $ref;
             }
@@ -471,6 +547,21 @@ class question_image_audit {
                 'itemid'    => $m['itemid'],
                 'path'      => rawurldecode($m['path']),
             ];
+        }
+        return $refs;
+    }
+
+    /**
+     * @param string $text
+     * @return array Array of matches, each a ['path' => ..].
+     */
+    protected static function find_token_refs($text) {
+        if (!preg_match_all(self::TOKEN_REGEX, $text, $matches, PREG_SET_ORDER)) {
+            return [];
+        }
+        $refs = [];
+        foreach ($matches as $m) {
+            $refs[] = ['path' => rawurldecode($m['path'])];
         }
         return $refs;
     }
@@ -583,7 +674,8 @@ class question_image_audit {
         $wrongitem,
         $missing,
         $oversized,
-        $filerecord
+        $filerecord,
+        $istoken = false
     ) {
         global $CFG;
 
@@ -617,7 +709,10 @@ class question_image_audit {
         $row->currentlyusedin = implode('; ', array_unique($courselabels)) ?: '(not currently used in any quiz)';
         $row->quizlinks = implode('; ', array_unique($quizlinks));
         $row->fileshouldbein = self::describe_context($owningcontextid);
-        $row->embeddedurl = "pluginfile.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
+        $row->embeddedurl = $istoken
+            ? "@@PLUGINFILE@@/{$match['path']} (resolves to contextid={$match['contextid']}, "
+                . "component={$match['component']}, filearea={$match['filearea']}, itemid={$match['itemid']})"
+            : "pluginfile.php/{$match['contextid']}/{$match['component']}/{$match['filearea']}/"
             . "{$match['itemid']}/{$match['path']}";
         $row->embeddedcontextlabel = self::describe_context((int) $match['contextid']);
         $row->issuetypes = implode(',', $issuetypes);
