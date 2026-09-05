@@ -121,6 +121,58 @@ if ($anyfiles) {
 
 cli_writeln('');
 cli_writeln(str_repeat('=', 78));
+cli_writeln("0d. What course does course_modules.id={$ctxrow->instanceid} (from that context) actually belong to?");
+cli_writeln(str_repeat('=', 78));
+if ($ctxrow && $ctxrow->contextlevel == CONTEXT_MODULE) {
+    $cm = $DB->get_record('course_modules', ['id' => $ctxrow->instanceid]);
+    if ($cm) {
+        $course = $DB->get_record('course', ['id' => $cm->course]);
+        $modname = $DB->get_field('modules', 'name', ['id' => $cm->module]);
+        cli_writeln("  course_modules.id={$cm->id} is a '{$modname}' in course id={$cm->course} "
+            . ($course ? "(\"{$course->fullname}\")" : '(course not found)'));
+    } else {
+        cli_writeln('  course_modules row not found.');
+    }
+}
+
+cli_writeln('');
+cli_writeln(str_repeat('=', 78));
+cli_writeln("0e. Does question id 1490949 (the REAL itemid found above) exist, and where is it used?");
+cli_writeln(str_repeat('=', 78));
+$realq = $DB->get_record('question', ['id' => 1490949]);
+if ($realq) {
+    cli_writeln("  FOUND: id=1490949 name=\"{$realq->name}\" qtype={$realq->qtype}");
+    cli_writeln('  questiontext: ' . $realq->questiontext);
+    $realqv = $DB->get_record('question_versions', ['questionid' => 1490949]);
+    if ($realqv) {
+        cli_writeln("  questionbankentryid={$realqv->questionbankentryid} version={$realqv->version}");
+        $usagesql2 = "SELECT qr.id AS refid, qr.version AS pinnedversion, cm.id AS cmid, c.id AS courseid,
+                            c.fullname AS coursefullname, quiz.name AS quizname
+                       FROM {question_references} qr
+                       JOIN {context} ctx ON ctx.id = qr.usingcontextid AND ctx.contextlevel = " . CONTEXT_MODULE . "
+                       JOIN {course_modules} cm ON cm.id = ctx.instanceid
+                       JOIN {modules} m ON m.id = cm.module AND m.name = 'quiz'
+                       JOIN {quiz} quiz ON quiz.id = cm.instance
+                       JOIN {course} c ON c.id = cm.course
+                      WHERE qr.questionbankentryid = :entryid";
+        $realusages = $DB->get_records_sql($usagesql2, ['entryid' => $realqv->questionbankentryid]);
+        if ($realusages) {
+            foreach ($realusages as $u) {
+                cli_writeln("    used by quiz \"{$u->quizname}\" in course \"{$u->coursefullname}\" "
+                    . "(course id {$u->courseid}), pinnedversion=" . var_export($u->pinnedversion, true));
+            }
+        } else {
+            cli_writeln('    Not currently referenced by any quiz via question_references.');
+        }
+    } else {
+        cli_writeln('  No question_versions row for id=1490949 (unexpected).');
+    }
+} else {
+    cli_writeln('  NOT FOUND either.');
+}
+
+cli_writeln('');
+cli_writeln(str_repeat('=', 78));
 cli_writeln("1. Does the file itself exist in mdl_files?");
 cli_writeln(str_repeat('=', 78));
 $file = $DB->get_record('files', [
