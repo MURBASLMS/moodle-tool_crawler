@@ -115,14 +115,30 @@ class question_image_audit {
     /**
      * Runs the audit.
      *
-     * @param array $options {
+     * @param array      $options {
      *     @type int      $courseid       Restrict to questions currently used within this course (0 = all courses).
      *     @type int      $oversizebytes  Flag files at or above this size. Defaults to self::DEFAULT_OVERSIZE_BYTES.
      *     @type int      $limit          Maximum number of issue rows to return (0 = unlimited).
      * }
+     * @param array|null $stats Optional, passed by reference. Populated with scan stats for --verbose
+     *                          reporting: entriesfound, questionsscanned, quizzesmatched, quiznames,
+     *                          fieldsscanned, pluginfilerefsfound, issuesfound, durationseconds.
      * @return array Array of stdClass issue rows, see build_issue_row().
      */
-    public static function run(array $options = []) {
+    public static function run(array $options = [], ?array &$stats = null) {
+        $starttime = microtime(true);
+
+        $stats = [
+            'entriesfound'        => 0,
+            'questionsscanned'    => 0,
+            'quizzesmatched'      => 0,
+            'quiznames'           => [],
+            'fieldsscanned'       => 0,
+            'pluginfilerefsfound' => 0,
+            'issuesfound'         => 0,
+            'durationseconds'     => 0,
+        ];
+
         $courseid      = $options['courseid'] ?? 0;
         $oversizebytes = $options['oversizebytes'] ?? self::DEFAULT_OVERSIZE_BYTES;
         $limit         = $options['limit'] ?? 0;
@@ -133,15 +149,19 @@ class question_image_audit {
         // production.
         $entryids = $courseid ? self::get_entryids_for_course($courseid) : null;
         if ($courseid && empty($entryids)) {
+            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
             return [];
         }
+        $stats['entriesfound'] = $entryids !== null ? count($entryids) : null; // null = "all" (site-wide run).
 
         // Map question.id => question_bank_entries.id, and question.id => qtype/name/course context info,
         // restricted to the latest version of each entry (we don't want to double report every historical
         // version of a question, only what is/was actually deliverable).
         $questionmap = self::get_question_map($entryids);
+        $stats['questionsscanned'] = count($questionmap);
 
         if (empty($questionmap)) {
+            $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
             return [];
         }
 
@@ -153,10 +173,23 @@ class question_image_audit {
         // --courseid filtering).
         $usages = self::get_usages_by_entry(array_column($questionmap, 'questionbankentryid'));
 
+        $matchedquizzes = [];
+        foreach ($usages as $qbeusages) {
+            foreach ($qbeusages as $usage) {
+                if (!$courseid || (int) $usage->courseid === (int) $courseid) {
+                    $matchedquizzes[$usage->cmid] = $usage->quizname . ' (course id ' . $usage->courseid . ')';
+                }
+            }
+        }
+        $stats['quizzesmatched'] = count($matchedquizzes);
+        $stats['quiznames'] = array_values($matchedquizzes);
+
         $issues = [];
 
         foreach (self::get_content_sources() as $source) {
             foreach (self::scan_source($source, $questionmap) as $ref) {
+                $stats['fieldsscanned']++;
+
                 $questionid = $ref->questionid;
                 if (!isset($questionmap[$questionid])) {
                     continue;
@@ -170,6 +203,8 @@ class question_image_audit {
                 }
 
                 foreach (self::find_pluginfile_refs($ref->text) as $match) {
+                    $stats['pluginfilerefsfound']++;
+
                     $embeddedcontextid = (int) $match['contextid'];
                     $valid = $validcontexts[$qbe] ?? [];
 
@@ -195,14 +230,17 @@ class question_image_audit {
                         $oversized,
                         $filerecord
                     );
+                    $stats['issuesfound'] = count($issues);
 
                     if ($limit && count($issues) >= $limit) {
+                        $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
                         return $issues;
                     }
                 }
             }
         }
 
+        $stats['durationseconds'] = round(microtime(true) - $starttime, 3);
         return $issues;
     }
 

@@ -49,9 +49,11 @@ require_once($CFG->libdir . '/clilib.php');
         'oversizebytes' => question_image_audit::DEFAULT_OVERSIZE_BYTES,
         'limit'         => 0,
         'format'        => 'table',
+        'verbose'       => false,
     ],
     [
         'h' => 'help',
+        'v' => 'verbose',
     ]
 );
 
@@ -71,20 +73,43 @@ Options:
  --oversizebytes=N    Flag embedded files at or above this size in bytes (default: {$options['oversizebytes']}).
  --limit=N            Stop after N issues found (default: 0 = unlimited).
  --format=table|csv   Output format (default: table).
+ -v, --verbose        Print what was actually scanned (entries, questions, quizzes matched, fields
+                       scanned, pluginfile references found) before the results.
  -h, --help           Print this help.
 
 Example:
- \$ php admin/tool/crawler/cli/check_question_images.php --courseid=1234
+ \$ php admin/tool/crawler/cli/check_question_images.php --courseid=1234 --verbose
 
 EOT;
     exit(0);
+}
+
+if ($options['verbose'] && $options['courseid']) {
+    cli_writeln("Restricting scan to course id {$options['courseid']} only.");
 }
 
 $issues = question_image_audit::run([
     'courseid'      => (int) $options['courseid'],
     'oversizebytes' => (int) $options['oversizebytes'],
     'limit'         => (int) $options['limit'],
-]);
+], $stats);
+
+if ($options['verbose']) {
+    cli_writeln(str_repeat('=', 78));
+    cli_writeln('Scan summary:');
+    cli_writeln('  Question bank entries in scope: '
+        . ($stats['entriesfound'] === null ? 'all (site-wide run)' : $stats['entriesfound']));
+    cli_writeln('  Questions scanned (latest version of each): ' . $stats['questionsscanned']);
+    cli_writeln('  Quizzes matched: ' . $stats['quizzesmatched']);
+    foreach ($stats['quiznames'] as $quizname) {
+        cli_writeln('    - ' . $quizname);
+    }
+    cli_writeln('  Question text/feedback/answer fields scanned: ' . $stats['fieldsscanned']);
+    cli_writeln('  pluginfile.php references found in those fields: ' . $stats['pluginfilerefsfound']);
+    cli_writeln('  Issues found: ' . $stats['issuesfound']);
+    cli_writeln('  Duration: ' . $stats['durationseconds'] . 's');
+    cli_writeln(str_repeat('=', 78));
+}
 
 if (empty($issues)) {
     cli_writeln('No issues found.');
