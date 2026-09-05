@@ -8,7 +8,7 @@
 * [Installation](#installation)
 * [Configuration](#configuration)
 * [Testing](#testing)
-* [Auditing quiz question images/files](#auditing-quiz-question-imagesfiles-without-a-full-http-crawl)
+* [Related tools](#related-tools)
 * [Debugging](#debugging)
 * [Reports](#reports)
 * [Support](#support)
@@ -189,85 +189,16 @@ and
 
 /admin/tool/crawler/report.php?report=recent
 
-# Auditing quiz question images/files (without a full HTTP crawl)
+# Related tools
 
-If all you actually care about is whether images/files embedded in quiz
-questions (question text, feedback, answers) will load for real *students*,
-a full site HTTP crawl is slower and less targeted than necessary, and won't
-catch the most common real cause of this class of problem: a question was
-authored, or rolled over from a previous course offering, with a raw
-`pluginfile.php` URL pasted into the HTML source (instead of using the file
-picker). A properly authored image (inserted via the file picker) is always
-saved by Moodle with a `pluginfile.php` URL whose contextid/itemid are the
-question's *own* current values - fixed at save time, and the same
-regardless of which course/quiz is currently using the question. So the
-reliable check is simply: does the embedded reference still point at this
-exact question's own context/item, or does it point at something else
-entirely (typically a raw absolute URL pasted from a different, unrelated -
-often "old unit" - question/course)? If it points elsewhere, no amount of
-enrolment in the current course will make Moodle serve it, because it isn't
-actually this question's file at all - while staff who happen to also have
-access to that other, unrelated context won't notice anything wrong when
-they do a quick check themselves.
-
-Note: while composing/editing, the editor's source-code view shows
-`draftfile.php` URLs (a private, temporary per-editing-session area), and
-viewing a question within a live quiz attempt shows a different, dynamically
-generated `pluginfile.php/.../usageid/slot/itemid/...` form - neither of
-which reflect what's actually stored in the database. Properly authored
-content (inserted via the file picker) is normally stored as an
-`@@PLUGINFILE@@/filename` **placeholder token**, not a concrete URL at all -
-Moodle resolves it to whichever of the above forms is appropriate at render
-time. This tool only ever reads the actual persisted database content, so it
-checks both forms it might actually find there:
-
-- A literal, concrete `pluginfile.php/<contextid>/.../<itemid>/...` URL -
-  which only ends up stored if someone bypassed the file picker (e.g. pasted
-  a raw URL into the HTML source). This is the rarer, but more seriously
-  broken, case: the checks below (foreign-context/wrong-item) only apply to
-  this form, since a token can't be "foreign" by construction.
-- An `@@PLUGINFILE@@/filename` token - the normal/expected form. This can
-  still reference a filename that's missing or oversized, even though it can
-  never be pointing at the wrong course/context.
-
-`cli/check_question_images.php` audits this directly against the database
-(no HTTP requests at all, runs in seconds/minutes even across a whole site).
-It checks:
-
-- **foreign-context**: the contextid embedded in the URL doesn't match this
-  question's own owning question-bank category context - i.e. it belongs to
-  a different question/category entirely. Almost always unfixable by
-  enrolment; the image needs to be re-inserted via the file picker.
-- **wrong-item**: the context matches, but the itemid doesn't match this
-  question's (or this specific answer's/hint's) own id - it's referencing a
-  sibling question's/answer's file, not this one's.
-- **missing-file**: the referenced file no longer exists at all.
-- **oversized**: the referenced file is at or above a configurable size
-  threshold (default 1 MB).
-
-Only questions that are actually referenced by a live quiz (via
-`question_references`) are scanned - an unused question sitting in the
-question bank can't affect any student, so is intentionally out of scope.
-Importantly, a quiz slot can *pin a specific version* of a question rather
-than always tracking the latest edit (e.g. deliberately, for exam
-stability) - this tool resolves and scans the actual pinned/shown version
-per usage, not just "the latest version of every entry", so it won't miss
-(or misreport against) content that's since been edited but isn't what
-students are actually shown. Randomly-drawn "random from category" slots
-(`question_set_references`) are not yet resolved to their pool of possible
-questions and are not covered.
-
-```
-php admin/tool/crawler/cli/check_question_images.php
-php admin/tool/crawler/cli/check_question_images.php --courseid=1234
-php admin/tool/crawler/cli/check_question_images.php --oversizebytes=2097152 --format=csv
-```
-
-This deliberately covers the highest-traffic core question types first
-(multichoice, truefalse, shortanswer, essay, match, numerical - see
-`question_image_audit::get_content_sources()`), rather than being exhaustive
-for every third-party question type out of the box; add more table/field
-entries there if you use other question types and want them covered too.
+If you only care about whether images/files embedded in quiz question
+content (question text/feedback/answers) will actually load for real
+students - e.g. a hardcoded reference left over from a course rollover, a
+missing file, or an oversized image - see
+[moodle-tool_questionimageaudit](https://github.com/MURBASLMS/moodle-tool_questionimageaudit),
+a small, separate, DB-only (no HTTP requests) CLI tool for exactly that
+problem. It doesn't share any code/tables/settings with this plugin and was
+split out on purpose.
 
 # Debugging
 
