@@ -137,8 +137,8 @@ if ($options['format'] === 'csv') {
     $out = fopen('php://stdout', 'w');
     fputcsv($out, [
         'questionid', 'questionname', 'qtype', 'sourcetable', 'sourcefield',
-        'currentlyusedin', 'quizlinks', 'fileshouldbein', 'embeddedurl', 'embeddedcontextlabel',
-        'issuetypes', 'filesize', 'editurl',
+        'courseshortnames', 'currentlyusedin', 'quizzes', 'quizlinks', 'fileshouldbein',
+        'embeddedurl', 'embeddedcontextlabel', 'issuetypes', 'filesize', 'editurl', 'previewurl',
     ]);
     foreach ($issues as $row) {
         fputcsv($out, (array) $row);
@@ -149,14 +149,17 @@ if ($options['format'] === 'csv') {
         cli_writeln(str_repeat('-', 78));
         cli_writeln("Question #{$row->questionid} \"{$row->questionname}\" ({$row->qtype})");
         cli_writeln("  Source:            {$row->sourcetable}.{$row->sourcefield}");
+        cli_writeln("  Course(s):         {$row->courseshortnames}");
         cli_writeln("  Currently used in: {$row->currentlyusedin}");
-        cli_writeln("  Quiz:              {$row->quizlinks}");
+        cli_writeln("  Quiz(zes):         {$row->quizzes}");
+        cli_writeln("  Quiz link(s):      {$row->quizlinks}");
         cli_writeln("  Embedded URL:      {$row->embeddedurl}");
         cli_writeln("  ...which is:       {$row->embeddedcontextlabel}");
         cli_writeln("  File SHOULD be in: {$row->fileshouldbein}");
         cli_writeln("  Issue(s):          {$row->issuetypes}"
             . ($row->filesize !== null ? " (filesize={$row->filesize} bytes)" : ''));
         cli_writeln("  Edit:              {$row->editurl}");
+        cli_writeln("  Preview:           {$row->previewurl}");
     }
     cli_writeln(str_repeat('-', 78));
     cli_writeln(count($issues) . ' issue(s) found.');

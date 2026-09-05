@@ -386,7 +386,8 @@ class question_image_audit {
         }
 
         $sql = "SELECT qr.id AS refid, qr.questionbankentryid, qr.version AS pinnedversion, qr.usingcontextid,
-                       cm.id AS cmid, c.id AS courseid, c.fullname AS coursefullname, quiz.name AS quizname
+                       cm.id AS cmid, c.id AS courseid, c.fullname AS coursefullname, c.shortname AS courseshortname,
+                       quiz.name AS quizname
                   FROM {question_references} qr
                   JOIN {context} ctx ON ctx.id = qr.usingcontextid AND ctx.contextlevel = " . CONTEXT_MODULE . "
                   JOIN {course_modules} cm ON cm.id = ctx.instanceid
@@ -699,9 +700,13 @@ class question_image_audit {
         }
 
         $courselabels = [];
+        $courseshortnames = [];
+        $quizlabels = [];
         $quizlinks = [];
         foreach ($questionusages as $usage) {
             $courselabels[] = "{$usage->coursefullname} (course id {$usage->courseid})";
+            $courseshortnames[] = $usage->courseshortname;
+            $quizlabels[] = "{$usage->quizname} (quiz id {$usage->cmid})";
             $quizlinks[] = $CFG->wwwroot . "/mod/quiz/view.php?id={$usage->cmid}";
         }
 
@@ -711,7 +716,9 @@ class question_image_audit {
         $row->qtype = $question->qtype;
         $row->sourcetable = $source['table'];
         $row->sourcefield = $ref->field;
+        $row->courseshortnames = implode('; ', array_unique($courseshortnames)) ?: '(not currently used in any quiz)';
         $row->currentlyusedin = implode('; ', array_unique($courselabels)) ?: '(not currently used in any quiz)';
+        $row->quizzes = implode('; ', array_unique($quizlabels)) ?: '(not currently used in any quiz)';
         $row->quizlinks = implode('; ', array_unique($quizlinks));
         $row->fileshouldbein = self::describe_context($owningcontextid);
         $row->embeddedurl = $istoken
@@ -725,6 +732,8 @@ class question_image_audit {
         $firstusage = reset($questionusages);
         $row->editurl = $CFG->wwwroot . '/question/bank/editquestion/question.php?id=' . $question->id
             . ($firstusage ? '&courseid=' . $firstusage->courseid : '');
+        $row->previewurl = $CFG->wwwroot . '/question/bank/previewquestion/preview.php?id=' . $question->id
+            . ($firstusage ? '&cmid=' . $firstusage->cmid : '');
 
         return $row;
     }
